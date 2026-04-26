@@ -6,6 +6,12 @@ Zep检索工具服务
 1. InsightForge（深度洞察检索）- 最强大的混合检索，自动生成子问题并多维度检索
 2. PanoramaSearch（广度搜索）- 获取全貌，包括过期内容
 3. QuickSearch（简单搜索）- 快速检索
+
+[V1100 Token 節流防禦] 2026-04-27
+- 滑動窗口 (Sliding Window): 只提取最近 N 轮對話
+- 摘要優先 (Summary-First): 有摘要時以「摘要 + 最近 N 轮」取代完整歷史
+- 硬性上限: 所有節點/邊檢索均帶 MAX_NODES/MAX_EDGES 帽
+- Neo4j 查詢全部經由 execute_query_safe()
 """
 
 import time
@@ -14,7 +20,7 @@ from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
 
 # from zep_cloud.client import Zep
-from ..utils.neo4j_client import neo4j_db
+from ..utils.neo4j_client import neo4j_db, DEFAULT_QUERY_LIMIT, MAX_QUERY_LIMIT
 
 from ..config import Config
 from ..utils.logger import get_logger
@@ -23,6 +29,21 @@ from ..utils.locale import get_locale, t
 from ..utils.zep_paging import fetch_all_nodes, fetch_all_edges
 
 logger = get_logger('mirofish.zep_tools')
+
+# ═══ Token 節流常數 ═══
+# 滑動窗口：僅取最近 N 轮對話
+MEMORY_SLIDING_WINDOW_SIZE = 8
+# 摘要最大字元數（截斷保護）
+MEMORY_SUMMARY_MAX_CHARS = 2000
+# 圖譜檢索：節點與邊的硬性上限
+MAX_GRAPH_NODES = 100
+MAX_GRAPH_EDGES = 200
+# Panorama 每個類別的事實上限
+PANORAMA_FACTS_LIMIT = 30
+# InsightForge 實體詳情遍歷上限
+INSIGHT_ENTITY_DETAIL_LIMIT = 15
+# InsightForge 關係鏈上限
+INSIGHT_RELATIONSHIP_CHAIN_LIMIT = 30
 
 
 @dataclass
@@ -440,7 +461,103 @@ class ZepToolsService:
         if self._llm_client is None:
             self._llm_client = LLMClient()
         return self._llm_client
-    
+
+    # ========== [Token 節流] 滑動窗口 + 摘要優先記憶體提取 ==========
+
+    def get_session_context(
+        self,
+        session_id: str,
+        window_size: int = None,
+        summary_max_chars: int = None,
+    ) -> Dict[str, Any]:
+        """
+        [Token 節流核心] 以「摘要 + 最近 N 輪對話」取代完整 Session 歷史。
+
+        策略:
+        1. 優先檢查 Session 是否已有 Summary（摘要）
+        2. 若有摘要 → 回傳 {summary + 最近 N 輪對話}
+        3. 若無摘要 → 僅回傳最近 N 輪對話（滑動窗口）
+        4. 決不載入完整歷史紀錄
+
+        Args:
+            session_id: Zep Session ID
+            window_size: 滑動窗口大小（預設 MEMORY_SLIDING_WINDOW_SIZE）
+            summary_max_chars: 摘要最大字元數（預設 MEMORY_SUMMARY_MAX_CHARS）
+
+        Returns:
+            Dict:
+                - summary: str | None (摘要文字，經截斷保護)
+                - messages: List[Dict] (最近 N 輪對話)
+                - total_history_count: int (Session 完整歷史筆數，僅供統計)
+                - window_size: int (實際使用的窗口大小)
+                - throttled: bool (是否已啟動節流)
+        """
+        effective_window = window_size or MEMORY_SLIDING_WINDOW_SIZE
+        effective_summary_max = summary_max_chars or MEMORY_SUMMARY_MAX_CHARS
+
+        result = {
+            "summary": None,
+            "messages": [],
+            "total_history_count": 0,
+            "window_size": effective_window,
+            "throttled": False,
+        }
+
+        # Zep client 已停用時的本地降級
+        if self.client is None:
+            logger.info(
+                f"[Token Shield] Zep client 未啟用，跳過 Session 記憶體提取 (session={session_id})"
+            )
+            return result
+
+        try:
+            # Step 1: 嘗試取得 Session 摘要
+            try:
+                memory = self.client.memory.get(session_id)
+                if memory and hasattr(memory, 'summary') and memory.summary:
+                    raw_summary = str(memory.summary.content if hasattr(memory.summary, 'content') else memory.summary)
+                    # 截斷保護
+                    if len(raw_summary) > effective_summary_max:
+                        result["summary"] = raw_summary[:effective_summary_max] + "…[已截斷]"
+                    else:
+                        result["summary"] = raw_summary
+                    logger.info(
+                        f"[Token Shield] 取得 Session 摘要: {len(result['summary'])} chars (session={session_id})"
+                    )
+            except Exception as e:
+                logger.debug(f"[Token Shield] 取得摘要失敗（可能尚未生成）: {e}")
+
+            # Step 2: 取得最近 N 輪對話（滑動窗口）
+            try:
+                memory = self.client.memory.get(session_id, lastn=effective_window)
+                if memory and hasattr(memory, 'messages') and memory.messages:
+                    full_count = getattr(memory, 'total_count', len(memory.messages))
+                    result["total_history_count"] = full_count
+
+                    # 僅取最後 N 筆
+                    recent = memory.messages[-effective_window:]
+                    result["messages"] = [
+                        {
+                            "role": getattr(msg, 'role', 'unknown'),
+                            "content": getattr(msg, 'content', '')[:1000],  # 單訊息截斷保護
+                        }
+                        for msg in recent
+                    ]
+
+                    if full_count > effective_window:
+                        result["throttled"] = True
+                        logger.info(
+                            f"[Token Shield] 滑動窗口啟動: "
+                            f"載入 {len(result['messages'])}/{full_count} 筆 (session={session_id})"
+                        )
+            except Exception as e:
+                logger.debug(f"[Token Shield] 取得對話歷史失敗: {e}")
+
+        except Exception as e:
+            logger.error(f"[Token Shield] Session 記憶體提取整體失敗: {e}")
+
+        return result
+
     def _call_with_retry(self, func, operation_name: str, max_retries: int = None):
         """带重试机制的API调用"""
         max_retries = max_retries or self.MAX_RETRIES
@@ -488,9 +605,13 @@ class ZepToolsService:
         logger.info(f"執行 Neo4j 馬匹事故查詢: {query[:50]}")
         
         try:
-            # 將傳入的 query 視為目標馬匹名稱 (或從中提取)，此處直接作為參數示範
-            cypher_query = "MATCH (h:Horse {name: $horse_name})-[r:HAS_INCIDENT]->(i:Incident) RETURN i.description as fact"
-            records = neo4j_db.execute_query(cypher_query, {"horse_name": query})
+            # [Token 節流] 使用 execute_query_safe 自動注入 LIMIT
+            records = neo4j_db.execute_query_safe(
+                "MATCH (h:Horse {name: $horse_name})-[r:HAS_INCIDENT]->(i:Incident) "
+                "RETURN i.description as fact",
+                {"horse_name": query},
+                limit=limit
+            )
             
             facts = [r.get("fact") for r in records if r.get("fact")]
             
