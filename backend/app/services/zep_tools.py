@@ -1118,11 +1118,18 @@ class ZepToolsService:
                 if target_uuid:
                     entity_uuids.add(target_uuid)
         
-        # 获取所有相关实体的详情（不限制数量，完整输出）
+        # 获取相关实体的详情（[Token 節流] 限制遍歷數量上限）
         entity_insights = []
         node_map = {}  # 用于后续关系链构建
         
-        for uuid in list(entity_uuids):  # 处理所有实体，不截断
+        # [Token Shield] 硬性截斷：最多遍歷 INSIGHT_ENTITY_DETAIL_LIMIT 個實體
+        entity_uuid_list = list(entity_uuids)[:INSIGHT_ENTITY_DETAIL_LIMIT]
+        if len(entity_uuids) > INSIGHT_ENTITY_DETAIL_LIMIT:
+            logger.warning(
+                f"[Token Shield] 實體數量 {len(entity_uuids)} 超過上限 {INSIGHT_ENTITY_DETAIL_LIMIT}，已截斷"
+            )
+        
+        for uuid in entity_uuid_list:
             if not uuid:
                 continue
             try:
@@ -1152,9 +1159,14 @@ class ZepToolsService:
         result.entity_insights = entity_insights
         result.total_entities = len(entity_insights)
         
-        # Step 4: 构建所有关系链（不限制数量）
+        # Step 4: 构建关系链（[Token 節流] 限制上限 INSIGHT_RELATIONSHIP_CHAIN_LIMIT）
         relationship_chains = []
-        for edge_data in all_edges:  # 处理所有边，不截断
+        for edge_data in all_edges:
+            if len(relationship_chains) >= INSIGHT_RELATIONSHIP_CHAIN_LIMIT:
+                logger.warning(
+                    f"[Token Shield] 關係鏈數量達到上限 {INSIGHT_RELATIONSHIP_CHAIN_LIMIT}，停止構建"
+                )
+                break
             if isinstance(edge_data, dict):
                 source_uuid = edge_data.get('source_node_uuid', '')
                 target_uuid = edge_data.get('target_node_uuid', '')
@@ -1256,16 +1268,24 @@ class ZepToolsService:
         
         result = PanoramaResult(query=query)
         
-        # 获取所有节点
+        # 获取所有节点（[Token 節流] 僅保留前 MAX_GRAPH_NODES 個節點於 result）
         all_nodes = self.get_all_nodes(graph_id)
         node_map = {n.uuid: n for n in all_nodes}
-        result.all_nodes = all_nodes
+        result.all_nodes = all_nodes[:MAX_GRAPH_NODES]  # [Token Shield] 截斷保護
         result.total_nodes = len(all_nodes)
+        if len(all_nodes) > MAX_GRAPH_NODES:
+            logger.warning(
+                f"[Token Shield] Panorama 節點數 {len(all_nodes)} 超過 {MAX_GRAPH_NODES}，已截斷輸出"
+            )
         
-        # 获取所有边（包含时间信息）
+        # 获取所有边（包含时间信息）（[Token 節流] 邊列表也截斷）
         all_edges = self.get_all_edges(graph_id, include_temporal=True)
-        result.all_edges = all_edges
+        result.all_edges = all_edges[:MAX_GRAPH_EDGES]  # [Token Shield] 截斷保護
         result.total_edges = len(all_edges)
+        if len(all_edges) > MAX_GRAPH_EDGES:
+            logger.warning(
+                f"[Token Shield] Panorama 邊數 {len(all_edges)} 超過 {MAX_GRAPH_EDGES}，已截斷輸出"
+            )
         
         # 分类事实
         active_facts = []
@@ -1306,14 +1326,20 @@ class ZepToolsService:
                     score += 10
             return score
         
-        # 排序并限制数量
+        # 排序并限制数量 ([Token 節流] 雙重帽：min(limit, PANORAMA_FACTS_LIMIT))
         active_facts.sort(key=relevance_score, reverse=True)
         historical_facts.sort(key=relevance_score, reverse=True)
         
-        result.active_facts = active_facts[:limit]
-        result.historical_facts = historical_facts[:limit] if include_expired else []
+        effective_facts_limit = min(limit, PANORAMA_FACTS_LIMIT)
+        result.active_facts = active_facts[:effective_facts_limit]
+        result.historical_facts = historical_facts[:effective_facts_limit] if include_expired else []
         result.active_count = len(active_facts)
         result.historical_count = len(historical_facts)
+        
+        logger.info(
+            f"[Token Shield] Panorama 事實截斷: active={len(result.active_facts)}/{len(active_facts)}, "
+            f"historical={len(result.historical_facts)}/{len(historical_facts)}, limit={effective_facts_limit}"
+        )
         
         logger.info(t("console.panoramaSearchComplete", active=result.active_count, historical=result.historical_count))
         return result

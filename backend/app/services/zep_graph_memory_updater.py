@@ -1,6 +1,10 @@
 """
 Zep图谱记忆更新服务
 将模拟中的Agent活动动态更新到Zep图谱中
+
+[V1100 Token 節流防禦] 2026-04-27
+- MAX_EPISODE_TEXT_CHARS: 單條活動描述的最大字元數
+- MAX_BATCH_TEXT_CHARS: 批次合併文本的最大字元數
 """
 
 import os
@@ -19,6 +23,12 @@ from ..utils.logger import get_logger
 from ..utils.locale import get_locale, set_locale
 
 logger = get_logger('mirofish.zep_graph_memory_updater')
+
+# ═══ Token 節流常數 ═══
+# 單條活動描述的最大字元數（超過則截斷）
+MAX_EPISODE_TEXT_CHARS = 500
+# 批次合併文本的最大字元數（超過則截斷最早的條目）
+MAX_BATCH_TEXT_CHARS = 3000
 
 
 @dataclass
@@ -59,7 +69,13 @@ class AgentActivity:
         description = describe_func()
         
         # 直接返回 "agent名称: 活动描述" 格式，不添加模拟前缀
-        return f"{self.agent_name}: {description}"
+        text = f"{self.agent_name}: {description}"
+        
+        # [Token 節流] 截斷保護：單條描述不超過 MAX_EPISODE_TEXT_CHARS
+        if len(text) > MAX_EPISODE_TEXT_CHARS:
+            text = text[:MAX_EPISODE_TEXT_CHARS - 3] + "..."
+        
+        return text
     
     def _describe_create_post(self) -> str:
         content = self.action_args.get("content", "")
@@ -408,6 +424,13 @@ class ZepGraphMemoryUpdater:
         # 将多条活动合并为一条文本，用换行分隔
         episode_texts = [activity.to_episode_text() for activity in activities]
         combined_text = "\n".join(episode_texts)
+        
+        # [Token 節流] 批次文本總長度截斷保護
+        if len(combined_text) > MAX_BATCH_TEXT_CHARS:
+            combined_text = combined_text[:MAX_BATCH_TEXT_CHARS - 20] + "\n...[TRUNCATED]"
+            logger.warning(
+                f"[Token Shield] 批次文本超過 {MAX_BATCH_TEXT_CHARS} chars，已截斷"
+            )
         
         # 带重试的发送
         for attempt in range(self.MAX_RETRIES):
