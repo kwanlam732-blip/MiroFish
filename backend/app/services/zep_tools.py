@@ -14,7 +14,7 @@ from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
 
 # from zep_cloud.client import Zep
-from backend.app.utils.neo4j_client import neo4j_db
+from ..utils.neo4j_client import neo4j_db
 
 from ..config import Config
 from ..utils.logger import get_logger
