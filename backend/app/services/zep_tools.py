@@ -13,7 +13,8 @@ import json
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
 
-from zep_cloud.client import Zep
+# from zep_cloud.client import Zep
+from backend.app.utils.neo4j_client import neo4j_db
 
 from ..config import Config
 from ..utils.logger import get_logger
@@ -424,10 +425,11 @@ class ZepToolsService:
     
     def __init__(self, api_key: Optional[str] = None, llm_client: Optional[LLMClient] = None):
         self.api_key = api_key or Config.ZEP_API_KEY
-        if not self.api_key:
-            raise ValueError("ZEP_API_KEY 未配置")
-        
-        self.client = Zep(api_key=self.api_key)
+        # Zep client completely disabled for NEO-FISH operation
+        # if not self.api_key:
+        #     raise ValueError("ZEP_API_KEY 未配置")
+        # self.client = Zep(api_key=self.api_key)
+        self.client = None
         # LLM客户端用于InsightForge生成子问题
         self._llm_client = llm_client
         logger.info(t("console.zepToolsInitialized"))
@@ -483,65 +485,26 @@ class ZepToolsService:
         Returns:
             SearchResult: 搜索结果
         """
-        logger.info(t("console.graphSearch", graphId=graph_id, query=query[:50]))
+        logger.info(f"執行 Neo4j 馬匹事故查詢: {query[:50]}")
         
-        # 尝试使用Zep Cloud Search API
         try:
-            search_results = self._call_with_retry(
-                func=lambda: self.client.graph.search(
-                    graph_id=graph_id,
-                    query=query,
-                    limit=limit,
-                    scope=scope,
-                    reranker="cross_encoder"
-                ),
-                operation_name=t("console.graphSearchOp", graphId=graph_id)
-            )
+            # 將傳入的 query 視為目標馬匹名稱 (或從中提取)，此處直接作為參數示範
+            cypher_query = "MATCH (h:Horse {name: $horse_name})-[r:HAS_INCIDENT]->(i:Incident) RETURN i.description as fact"
+            records = neo4j_db.execute_query(cypher_query, {"horse_name": query})
             
-            facts = []
-            edges = []
-            nodes = []
-            
-            # 解析边搜索结果
-            if hasattr(search_results, 'edges') and search_results.edges:
-                for edge in search_results.edges:
-                    if hasattr(edge, 'fact') and edge.fact:
-                        facts.append(edge.fact)
-                    edges.append({
-                        "uuid": getattr(edge, 'uuid_', None) or getattr(edge, 'uuid', ''),
-                        "name": getattr(edge, 'name', ''),
-                        "fact": getattr(edge, 'fact', ''),
-                        "source_node_uuid": getattr(edge, 'source_node_uuid', ''),
-                        "target_node_uuid": getattr(edge, 'target_node_uuid', ''),
-                    })
-            
-            # 解析节点搜索结果
-            if hasattr(search_results, 'nodes') and search_results.nodes:
-                for node in search_results.nodes:
-                    nodes.append({
-                        "uuid": getattr(node, 'uuid_', None) or getattr(node, 'uuid', ''),
-                        "name": getattr(node, 'name', ''),
-                        "labels": getattr(node, 'labels', []),
-                        "summary": getattr(node, 'summary', ''),
-                    })
-                    # 节点摘要也算作事实
-                    if hasattr(node, 'summary') and node.summary:
-                        facts.append(f"[{node.name}]: {node.summary}")
-            
-            logger.info(t("console.searchComplete", count=len(facts)))
+            facts = [r.get("fact") for r in records if r.get("fact")]
             
             return SearchResult(
                 facts=facts,
-                edges=edges,
-                nodes=nodes,
+                edges=[],
+                nodes=[],
                 query=query,
                 total_count=len(facts)
             )
             
         except Exception as e:
-            logger.warning(t("console.zepSearchApiFallback", error=str(e)))
-            # 降级：使用本地关键词匹配搜索
-            return self._local_search(graph_id, query, limit, scope)
+            logger.error(f"Neo4j 查詢失敗: {str(e)}")
+            return SearchResult(facts=[], edges=[], nodes=[], query=query, total_count=0)
     
     def _local_search(
         self, 

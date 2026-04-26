@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from queue import Queue, Empty
 
-from zep_cloud.client import Zep
+# from zep_cloud.client import Zep
 
 from ..config import Config
 from ..utils.logger import get_logger
@@ -243,7 +243,8 @@ class ZepGraphMemoryUpdater:
         if not self.api_key:
             raise ValueError("ZEP_API_KEY未配置")
         
-        self.client = Zep(api_key=self.api_key)
+        # self.client = Zep(api_key=self.api_key)
+        self.client = None # Disconnected from Zep
         
         # 活动队列
         self._activity_queue: Queue = Queue()
@@ -411,11 +412,14 @@ class ZepGraphMemoryUpdater:
         # 带重试的发送
         for attempt in range(self.MAX_RETRIES):
             try:
-                self.client.graph.add(
-                    graph_id=self.graph_id,
-                    type="text",
-                    data=combined_text
-                )
+                # self.client.graph.add(
+                #     graph_id=self.graph_id,
+                #     type="text",
+                #     data=combined_text
+                # )
+                
+                # mock successful send
+                pass
                 
                 self._total_sent += 1
                 self._total_items_sent += len(activities)
