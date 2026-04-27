@@ -9,6 +9,10 @@
 flask>=3.0.0
 flask-cors>=6.0.0
 
+# ============= V1100 全息指揮台 (FastAPI) =============
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+
 # ============= LLM 相关 =============
 # OpenAI SDK（统一使用 OpenAI 格式调用 LLM）
 openai>=1.0.0

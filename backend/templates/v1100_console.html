@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>V1100 全息指揮台 — MiroFish Local Engine</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', 'Microsoft JhengHei', sans-serif;
+            background: #0a0e17;
+            color: #c8d6e5;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
+        .beacon {
+            text-align: center;
+            padding: 3rem;
+            border: 1px solid rgba(0, 255, 136, 0.15);
+            border-radius: 12px;
+            background: rgba(10, 14, 23, 0.8);
+            backdrop-filter: blur(12px);
+            box-shadow: 0 0 40px rgba(0, 255, 136, 0.05);
+        }
+        h1 {
+            font-size: 1.8rem;
+            color: #00ff88;
+            margin-bottom: 0.5rem;
+            text-shadow: 0 0 20px rgba(0, 255, 136, 0.3);
+        }
+        .status { color: #576574; font-size: 0.9rem; margin-top: 1rem; }
+        .pulse {
+            display: inline-block;
+            width: 8px; height: 8px;
+            background: #00ff88;
+            border-radius: 50%;
+            margin-right: 6px;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; box-shadow: 0 0 4px #00ff88; }
+            50% { opacity: 0.3; box-shadow: 0 0 12px #00ff88; }
+        }
+    </style>
+</head>
+<body>
+    <div class="beacon">
+        <h1>⚡ V1100 全息指揮台</h1>
+        <p>MiroFish Local Engine — 後端總線已就緒</p>
+        <p class="status">
+            <span class="pulse"></span>
+            Stage 1 完成 · 等待 Stage 2 前端部署
+        </p>
+    </div>
+</body>
+</html>
