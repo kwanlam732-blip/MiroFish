@@ -83,24 +83,39 @@ def get_runners_for_race(
         if csv_files:
             csv_file = csv_files[0]
             logger.info(f"[Parser] 讀取 CSV 排位表: {csv_file.name}")
-            df = pd.read_csv(csv_file)
             
-            if '場次' in df.columns and '馬名' in df.columns:
-                target_race_int = int(str(target_race).replace("第", "").replace("場", "").strip())
-                df['場次'] = pd.to_numeric(df['場次'], errors='coerce')
-                df_race = df[df['場次'] == target_race_int]
-                
-                for _, row in df_race.iterrows():
-                    horse_name = str(row['馬名']).strip()
-                    # 過濾純文字馬名 (移除非中英文的奇怪字符，這裡簡單處理過濾括號與數字)
-                    horse_name = re.sub(r'[\(\)（）\d]', '', horse_name).strip()
-                    if horse_name and horse_name not in ['nan', 'None', '']:
-                        runners.append(horse_name)
-                
-                if runners:
-                    logger.info(f"[Parser] CSV 第 {target_race} 場解析完成，找到 {len(runners)} 匹馬: {', '.join(runners[:5])}...")
-                    return runners
-            logger.warning("[Parser] CSV 缺少 '場次' 或 '馬名' 欄位，退回 MD 模式")
+            try:
+                df = pd.read_csv(csv_file, encoding='utf-8-sig')
+            except UnicodeDecodeError:
+                try:
+                    df = pd.read_csv(csv_file, encoding='big5')
+                except Exception as e:
+                    logger.warning(f"[Parser] CSV 編碼解析失敗: {e}")
+                    df = pd.DataFrame()
+            
+            if not df.empty:
+                df.columns = df.columns.str.strip()
+                if '場次' in df.columns and '馬名' in df.columns:
+                    target_race_int = int(str(target_race).replace("第", "").replace("場", "").strip())
+                    df['場次'] = pd.to_numeric(df['場次'], errors='coerce')
+                    df_race = df[df['場次'] == target_race_int]
+                    
+                    for _, row in df_race.iterrows():
+                        horse_name = str(row['馬名']).strip()
+                        import re
+                        match = re.search(r'([^\(]+)\s*\(([^\)]+)\)', horse_name)
+                        if match:
+                            horse_name = match.group(1).strip()
+                        horse_name = re.sub(r'[\(\)（）\d]', '', horse_name).strip()
+                        if horse_name and horse_name not in ['nan', 'None', '']:
+                            runners.append(horse_name)
+                    
+                    if runners:
+                        logger.info(f"[Parser] CSV 第 {target_race} 場解析完成，找到 {len(runners)} 匹馬: {', '.join(runners[:5])}...")
+                        return runners
+                else:
+                    logger.warning(f"[Parser] CSV 缺少 '場次' 或 '馬名' 欄位，現有欄位: {list(df.columns)}")
+            logger.warning("[Parser] CSV 解析失敗或缺少必要欄位，退回 MD 模式")
             
         # ─── 若無 CSV，退回 MD 模式 ───
         race_files = []
