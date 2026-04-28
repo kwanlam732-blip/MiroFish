@@ -10,11 +10,20 @@ Neo4j 本地圖譜記憶庫客戶端
 
 import os
 import logging
+from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
+# 強制讀取 MF_Local_Engine 根目錄下的 .env，避免不同工作目錄導致 dotenv 失效
+DOTENV_PATH = Path(__file__).resolve().parents[3] / ".env"
+load_dotenv(DOTENV_PATH)
 
 logger = logging.getLogger(__name__)
+
+NEO4J_URI = os.getenv("NEO4J_URI", "bolt://localhost:7687")
+NEO4J_USER = os.getenv("NEO4J_USERNAME", "neo4j")
+NEO4J_PWD = os.getenv("NEO4J_PASSWORD", "12345678")
+logger.info(f"[Neo4j] dotenv path: {DOTENV_PATH}")
+logger.info(f"[Neo4j] loaded NEO4J_URI={NEO4J_URI}, NEO4J_USERNAME={NEO4J_USER}")
 
 
 # ═══ Token 節流常數 ═══
@@ -30,9 +39,9 @@ class Neo4jDriver:
     """Neo4j 驅動封裝（延遲初始化 + Token 節流防禦）"""
 
     def __init__(self):
-        self.uri = os.getenv("NEO4J_URI", "bolt://localhost:7687")
-        self.user = os.getenv("NEO4J_USERNAME", "neo4j")
-        self.password = os.getenv("NEO4J_PASSWORD", "password")
+        self.uri = NEO4J_URI
+        self.user = NEO4J_USER
+        self.password = NEO4J_PWD
         self._driver = None
 
     def _get_driver(self):

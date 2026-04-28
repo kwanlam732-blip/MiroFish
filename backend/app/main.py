@@ -218,27 +218,20 @@ async def get_graph_data(
     ```
 
     **[Token Shield]** 硬性 LIMIT 200，預設 100。
+    
+    **[黑盒偵測]** 若 Neo4j 連線失敗，直接回傳 HTTP 500 + 詳細錯誤原因。禁止降級假數據！
     """
-    def _mock_graph_response():
-        mock_nodes = [
-            {"id": "美麗傳承", "category": "Horse", "name": "美麗傳承", "trainer": "蔡約翰", "jockey": "潘頓"},
-            {"id": "金鎗六十", "category": "Horse", "name": "金鎗六十", "trainer": "呂健威", "jockey": "田泰安"},
-            {"id": "2026-04-01", "category": "Race", "date": "2026-04-01", "venue": "沙田", "race_no": 1},
-            {"id": "2026-04-08", "category": "Race", "date": "2026-04-08", "venue": "跑馬地", "race_no": 2},
-        ]
-        mock_links = [
-            {"source": "美麗傳承", "target": "2026-04-01", "type": "PARTICIPATES_IN"},
-            {"source": "金鎗六十", "target": "2026-04-08", "type": "PARTICIPATES_IN"},
-        ]
-        logger.info("[V1100] 返回模擬圖譜數據: 4 節點, 2 關係")
-        return JSONResponse(content={"nodes": mock_nodes, "links": mock_links})
-
+    
     # ─── 建立 Neo4j 連線 ───
     try:
         driver = neo4j_db._get_driver()
     except Exception as e:
-        logger.warning(f"[V1100] Neo4j 初始化失敗，使用模擬數據: {e}")
-        return _mock_graph_response()
+        error_msg = str(e)
+        logger.error(f"[V1100] ❌ 圖譜雷達失效：{error_msg}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"[V1100] Neo4j 連線失敗 (圖譜雷達離線)：{error_msg}。請檢查 .env 配置和 Neo4j 服務狀態。"
+        )
 
     # ─── Cypher 查詢：抓取有關係的節點對 ───
     cypher = (
@@ -286,8 +279,16 @@ async def get_graph_data(
 
         node_count = len(nodes_map)
         link_count = len(links)
+        
+        if node_count == 0:
+            logger.warning(f"[V1100] 圖譜為空：0 節點，0 關係。請檢查是否已上傳並處理訓練數據。")
+            raise HTTPException(
+                status_code=500,
+                detail="[V1100] 圖譜為空。請先上傳訓練數據 (Race Card / Training Narratives)。"
+            )
+        
         logger.info(
-            f"[V1100] graph_data 回傳: {node_count} 節點, {link_count} 關係"
+            f"[V1100] ✅ 圖譜雷達回傳: {node_count} 節點, {link_count} 關係"
         )
 
         return JSONResponse(content={
@@ -295,9 +296,15 @@ async def get_graph_data(
             "links": links,
         })
 
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.warning(f"[V1100] Cypher 查詢失敗，使用模擬數據: {e}")
-        return _mock_graph_response()
+        error_msg = str(e)
+        logger.error(f"[V1100] ❌ Cypher 查詢異常：{error_msg}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"[V1100] 圖譜查詢失敗：{error_msg}"
+        )
 
 
 # ═══════════════════════════════════════════════

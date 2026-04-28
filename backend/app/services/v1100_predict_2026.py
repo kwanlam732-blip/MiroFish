@@ -100,14 +100,50 @@ def get_runners_for_race(
         
         race_section = content[start_pos:end_pos]
         
-        # 從表格中提取馬名
-        # Markdown 表格格式：| 馬號 | 馬名 | ...
-        table_rows = re.findall(r"\|\s*(\d+)\s*\|\s*([^|]+)\s*\|", race_section)
+        # 解析 Markdown 表格：
+        # 1. 找到表頭行（包含 "馬號" 和 "馬名"）
+        # 2. 定位 "馬名" 欄的位置
+        # 3. 從資料行中精準抓取該欄的值
         
-        for horse_num, horse_name in table_rows:
-            horse_name = horse_name.strip()
-            if horse_name and horse_name not in ["馬名", "馬名 "]:  # 跳過表頭
-                runners.append(horse_name)
+        lines = race_section.split('\n')
+        
+        # 找表頭行
+        header_line = None
+        header_idx = -1
+        for i, line in enumerate(lines):
+            if '馬號' in line and '馬名' in line:
+                header_line = line
+                header_idx = i
+                break
+        
+        if header_line is None:
+            logger.warning(f"[Parser] 無法找到表頭行 (馬號|馬名)")
+            return []
+        
+        # 解析表頭欄位位置
+        headers = [h.strip() for h in header_line.split('|')]
+        horse_name_col = -1
+        for i, header in enumerate(headers):
+            if header == '馬名':
+                horse_name_col = i
+                break
+        
+        if horse_name_col == -1:
+            logger.warning(f"[Parser] 無法找到 '馬名' 欄位")
+            return []
+        
+        # 從表格資料行中抓取馬名
+        for i in range(header_idx + 2, len(lines)):  # skip header and separator
+            line = lines[i].strip()
+            if not line or line.startswith('##'):
+                break
+            if line.startswith('|'):
+                cells = [c.strip() for c in line.split('|')]
+                if len(cells) > horse_name_col:
+                    horse_name = cells[horse_name_col].strip()
+                    # 確保只抓純文字馬名，排除表頭或空值
+                    if horse_name and horse_name not in ['馬名', ''] and not horse_name.startswith('-'):
+                        runners.append(horse_name)
         
         logger.info(f"[Parser] 第 {target_race} 場解析完成，找到 {len(runners)} 匹馬: {', '.join(runners[:5])}...")
         
@@ -122,7 +158,7 @@ def get_runners_for_race(
 #  Neo4j 圖譜記憶檢索
 # ═══════════════════════════════════════════════
 
-def _retrieve_graph_intel(prompt: str, target_date: Optional[str] = None, target_race: Optional[str] = None) -> str:
+def _retrieve_graph_intel(prompt: str, target_date: Optional[str] = None, target_race: Optional[str] = None, runners_list: List[str] = None) -> str:
     """
     從 Neo4j 圖譜中檢索與 prompt 相關的馬匹情報。
     回傳格式化的情報文本，供 LLM 作為上下文。
@@ -130,16 +166,22 @@ def _retrieve_graph_intel(prompt: str, target_date: Optional[str] = None, target
     intel_lines = []
 
     try:
-        # 使用提供的參數或從 prompt 中提取日期關鍵字
         import re
-        if target_date:
-            date_to_use = target_date
-        else:
-            date_match = re.search(r'(\d{4}-\d{2}-\d{2})', prompt)
-            date_to_use = date_match.group(1) if date_match else None
-
-        if date_to_use:
-            # 按日期檢索該日所有事件
+        if runners_list and len(runners_list) > 0:
+            # 根據馬名清單，檢索這些馬匹的所有歷史事件
+            cypher = (
+                "MATCH (h:Horse)-[r:HAS_INCIDENT]->(i:Incident) "
+                "WHERE h.name IN $runners "
+                "RETURN h.name AS horse, h.code AS code, "
+                "       i.description AS incident, i.date AS date, i.race AS race "
+                "ORDER BY i.date DESC "
+                "LIMIT 200"
+            )
+            records = neo4j_db.execute_query_safe(
+                cypher, {"runners": runners_list}, limit=200
+            )
+        elif target_date:
+            # 如果沒有馬名清單，但有日期，則按日期檢索（舊邏輯保留作為後備）
             cypher = (
                 "MATCH (h:Horse)-[r:HAS_INCIDENT]->(i:Incident) "
                 "WHERE i.date = $date "
@@ -149,7 +191,7 @@ def _retrieve_graph_intel(prompt: str, target_date: Optional[str] = None, target
                 "LIMIT 100"
             )
             records = neo4j_db.execute_query_safe(
-                cypher, {"date": date_to_use}, limit=100
+                cypher, {"date": target_date}, limit=100
             )
         else:
             # 無日期 → 抓取最新的 50 筆事件作為上下文
@@ -168,7 +210,7 @@ def _retrieve_graph_intel(prompt: str, target_date: Optional[str] = None, target
                 code = rec.get("code", "?")
                 incident = rec.get("incident", "無特別報告")
                 race = rec.get("race", "?")
-                date = rec.get("date", target_date if date_match else "?")
+                date = rec.get("date", target_date if target_date else "?")
                 intel_lines.append(
                     f"- [{date} R{race}] {horse}({code}): {incident}"
                 )
@@ -246,7 +288,7 @@ async def run_swarm_prediction(
     _log("🔍 Phase 1: 從 Neo4j 圖譜記憶中檢索情報...")
 
     graph_intel = await asyncio.get_event_loop().run_in_executor(
-        None, _retrieve_graph_intel, prompt, target_date, target_race
+        None, _retrieve_graph_intel, prompt, target_date, target_race, runners_list
     )
 
     intel_count = graph_intel.count("\n") + 1 if graph_intel else 0
@@ -256,6 +298,7 @@ async def run_swarm_prediction(
     _log("🧠 Phase 2: 構建推演矩陣，準備調度 Ollama...")
 
     system_prompt = (
+        "【系統最高鐵律】：你是一個香港賽馬量化分析專家。你的所有思考過程、分析與最終輸出的報告，必須【強制使用繁體中文 (Traditional Chinese)】。嚴禁使用簡體中文！\n\n"
         "你是 V1100 MiroFish 賽馬推演引擎的首席分析官。\n"
         "你的任務是根據歷史情報進行專業的賽馬推演分析。\n\n"
         "## 【絕對鐵律】\n"
@@ -263,13 +306,21 @@ async def run_swarm_prediction(
         "你輸出的報告與分析，絕對、只能、必須使用這份名單內的馬名！\n"
         "嚴禁使用「馬匹A」、「馬匹B」等代號或任何不在名單中的馬名！\n"
         "如果無法使用名單中的馬名進行分析，則必須標註 [INVALID_RUNNER]。\n\n"
+        "## 【防胡扯裝甲 (Anti-BS Protocol)】\n"
+        "如果檢索到的歷史情報中【沒有】某匹馬的資料，請誠實標註「缺乏歷史數據」，並僅根據其物理特性進行保守評估。嚴禁捏造該馬匹「近期表現出色」等無根據的賽績！\n\n"
+        "## 【去重與信心過濾規範】\n"
+        "1. 嚴禁在報告中重複提及同一匹馬（例如不能重複提起「齊歡最樂」）\n"
+        "2. 對每匹重點馬匹標注信心指數 (0-100)\n"
+        "3. 信心指數低於 80 的馬匹，必須標註 [LOW_CONFIDENCE]\n"
+        "4. 只列出信心指數最高的 3-5 匹馬作為重點分析，其餘馬匹簡要提及\n\n"
         "## 輸出規範\n"
-        "1. 使用繁體中文\n"
+        "1. 強制使用繁體中文 (Traditional Chinese)\n"
         "2. 以 Markdown 格式輸出戰術報告\n"
         "3. 報告必須包含：推演摘要、重點馬匹分析、風險評估\n"
         "4. 對每匹重點馬匹標注信心指數 (0-100)\n"
-        "5. 信心指數低於 80 的馬匹標注 [CAUTION]\n"
-        "6. 嚴禁編造不存在的馬匹名稱\n"
+        "5. 信心指數低於 80 的馬匹標注 [LOW_CONFIDENCE]\n"
+        "6. 嚴禁編造不存在的馬匹名稱與賽績\n"
+        "7. 嚴禁重複提及同一匹馬\n"
     )
 
     user_prompt = (
