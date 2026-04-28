@@ -38,168 +38,35 @@ VRAM_SEMAPHORE = asyncio.Semaphore(3)
 #  排位表實體解析器 (Race Card Parser)
 # ═══════════════════════════════════════════════
 
-def get_runners_for_race(
-    target_date: Optional[str],
-    target_race: Optional[str],
-    uploads_dir: str = "data/uploads"
-) -> List[str]:
-    """
-    從排位表 (CSV 或 Markdown) 中精準抓取指定場次的所有真實馬名。
+def get_runners_for_race(target_date, target_race, uploads_dir="uploads"):
+    import pandas as pd
+    import glob
+    import os
     
-    Args:
-        target_date: 賽事日期 (格式: YYYY-MM-DD 或 YYYYMMDD)
-        target_race: 場次編號 (格式: "1", "2", "3" 等)
-        uploads_dir: uploads 目錄路徑
+    # 1. 雙重日期掃描 (無破折號與有破折號通吃)
+    clean_date = target_date.replace("-", "")
+    csv_files = glob.glob(os.path.join(uploads_dir, f"*{clean_date}*.csv")) + \
+                glob.glob(os.path.join(uploads_dir, f"*{target_date}*.csv"))
     
-    Returns:
-        馬名列表 (例如: ["太勝駒", "銳一", "鼓浪高升"])，找不到則回傳空列表
-    """
-    runners = []
-    
-    if not target_date or not target_race:
-        logger.warning("[Parser] 缺少日期或場次資訊，無法解析排位表")
-        return []
-    
-    try:
-        import pandas as pd
-        upload_path = Path(uploads_dir)
-        # 專案根目錄 (假設從 backend/app/services/ 回退到 HorseRacing/)
-        project_root = upload_path.parent.parent.parent
-        
-        search_dirs = [upload_path, project_root, project_root / "更新"]
-        
-        search_date = target_date.replace("-", "")
-        
-        # ─── 優先尋找 CSV 排位表 ───
-        csv_files = []
-        for d in search_dirs:
-            if d.exists():
-                csv_files.extend(list(d.glob(f"Race_Card_{search_date}*.csv")))
-                if not csv_files:
-                    csv_files.extend(list(d.glob(f"*{search_date}*.csv")))
-            if csv_files:
-                break
-                
-        if csv_files:
-            csv_file = csv_files[0]
-            logger.info(f"[Parser] 讀取 CSV 排位表: {csv_file.name}")
+    if csv_files:
+        try:
+            df = pd.read_csv(csv_files[0])
+            # 2. 終極暴力型別對齊：全部強制轉成字串，並削去空白！
+            df['場次'] = df['場次'].astype(str).str.strip()
+            target_race_str = str(target_race).replace("第", "").replace("場", "").strip()
             
-            try:
-                df = pd.read_csv(csv_file, encoding='utf-8-sig')
-            except UnicodeDecodeError:
-                try:
-                    df = pd.read_csv(csv_file, encoding='big5')
-                except Exception as e:
-                    logger.warning(f"[Parser] CSV 編碼解析失敗: {e}")
-                    df = pd.DataFrame()
+            # 3. 精準狙擊
+            runners = df[df['場次'] == target_race_str]['馬名'].dropna().astype(str).tolist()
+            clean_runners = [r.strip() for r in runners if r.strip()]
             
-            if not df.empty:
-                df.columns = df.columns.str.strip()
-                if '場次' in df.columns and '馬名' in df.columns:
-                    target_race_int = int(str(target_race).replace("第", "").replace("場", "").strip())
-                    df['場次'] = pd.to_numeric(df['場次'], errors='coerce')
-                    df_race = df[df['場次'] == target_race_int]
-                    
-                    for _, row in df_race.iterrows():
-                        horse_name = str(row['馬名']).strip()
-                        import re
-                        match = re.search(r'([^\(]+)\s*\(([^\)]+)\)', horse_name)
-                        if match:
-                            horse_name = match.group(1).strip()
-                        horse_name = re.sub(r'[\(\)（）\d]', '', horse_name).strip()
-                        if horse_name and horse_name not in ['nan', 'None', '']:
-                            runners.append(horse_name)
-                    
-                    if runners:
-                        logger.info(f"[Parser] CSV 第 {target_race} 場解析完成，找到 {len(runners)} 匹馬: {', '.join(runners[:5])}...")
-                        return runners
-                else:
-                    logger.warning(f"[Parser] CSV 缺少 '場次' 或 '馬名' 欄位，現有欄位: {list(df.columns)}")
-            logger.warning("[Parser] CSV 解析失敗或缺少必要欄位，退回 MD 模式")
+            if clean_runners:
+                print(f"[系統] ✅ 馬名清單已鎖定: {', '.join(clean_runners)}")
+                return clean_runners
+        except Exception as e:
+            print(f"[系統] ❌ CSV 解析崩潰: {e}")
             
-        # ─── 若無 CSV，退回 MD 模式 ───
-        race_files = []
-        for d in search_dirs:
-            if d.exists():
-                race_files.extend(list(d.glob(f"Race_Card_{search_date}*.md")))
-                if not race_files:
-                    race_files.extend(list(d.glob(f"*{search_date}*.md")))
-            if race_files:
-                break
-        
-        if not race_files:
-            logger.warning(f"[Parser] 找不到日期 {target_date} 的排位表檔案 (CSV 或 MD)")
-            return []
-        
-        race_file = race_files[0]
-        logger.info(f"[Parser] 讀取 MD 排位表: {race_file.name}")
-        
-        with open(race_file, 'r', encoding='utf-8') as f:
-            content = f.read()
-        
-        # 用正則表達式找尋「## 第 N 場」段落
-        race_pattern = rf"##\s*第\s*{re.escape(target_race)}\s*場"
-        match = re.search(race_pattern, content)
-        
-        if not match:
-            logger.warning(f"[Parser] 找不到第 {target_race} 場的排位表")
-            return []
-        
-        # 提取該場次的內容
-        start_pos = match.start()
-        next_section = re.search(r"\n##\s*第\s*\d+\s*場", content[start_pos + 1:])
-        
-        if next_section:
-            end_pos = start_pos + next_section.start()
-        else:
-            end_pos = len(content)
-        
-        race_section = content[start_pos:end_pos]
-        
-        lines = race_section.split('\n')
-        
-        header_line = None
-        header_idx = -1
-        for i, line in enumerate(lines):
-            if '馬號' in line and '馬名' in line:
-                header_line = line
-                header_idx = i
-                break
-        
-        if header_line is None:
-            logger.warning(f"[Parser] 無法找到表頭行 (馬號|馬名)")
-            return []
-        
-        headers = [h.strip() for h in header_line.split('|')]
-        horse_name_col = -1
-        for i, header in enumerate(headers):
-            if header == '馬名':
-                horse_name_col = i
-                break
-        
-        if horse_name_col == -1:
-            logger.warning(f"[Parser] 無法找到 '馬名' 欄位")
-            return []
-        
-        for i in range(header_idx + 2, len(lines)):
-            line = lines[i].strip()
-            if not line or line.startswith('##'):
-                break
-            if line.startswith('|'):
-                cells = [c.strip() for c in line.split('|')]
-                if len(cells) > horse_name_col:
-                    horse_name = cells[horse_name_col].strip()
-                    horse_name = re.sub(r'[\(\)（）\d]', '', horse_name).strip()
-                    if horse_name and horse_name not in ['馬名', '', '-']:
-                        runners.append(horse_name)
-        
-        logger.info(f"[Parser] MD 第 {target_race} 場解析完成，找到 {len(runners)} 匹馬: {', '.join(runners[:5])}...")
-        
-    except Exception as e:
-        logger.error(f"[Parser] 排位表解析失敗: {e}")
-        return []
-    
-    return runners
+    # 找不到或解析失敗，回傳空陣列觸發 HALT
+    return []
 
 
 # ═══════════════════════════════════════════════
