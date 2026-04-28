@@ -61,21 +61,54 @@ def process_csv_file(file_path):
     with open(file_path, 'r', encoding='utf-8-sig', newline='') as f:
         reader = csv.DictReader(f)
         for row in reader:
-            horse_name = row.get('horse_name') or row.get('horse') or row.get('馬名') or row.get('馬匹')
-            horse_code = row.get('horse_code') or row.get('code') or row.get('馬代號')
-            date = row.get('date') or row.get('日期')
-            race = row.get('race') or row.get('場次') or row.get('race_no') or row.get('race_number')
-            incident = row.get('incident') or row.get('description') or row.get('事件') or '無特別報告'
+            def get_val(key):
+                v = row.get(key, '').strip()
+                if not v or str(v).lower() == 'nan':
+                    return '無'
+                return v
 
-            if not horse_name or not date or not race:
+            horse_raw = row.get('馬名', '')
+            if not horse_raw or str(horse_raw).lower() == 'nan':
                 continue
 
+            # 處理馬名與馬號
+            import re
+            match = re.search(r'([^\(]+)\s*\(([^\)]+)\)', horse_raw)
+            if match:
+                horse_name = match.group(1).strip()
+                horse_code = match.group(2).strip()
+            else:
+                horse_name = horse_raw.strip()
+                horse_code = row.get('馬號', '').strip()
+
+            date = row.get('賽事日期', '').strip()
+            race = row.get('場次', '').strip()
+            if not date or not race:
+                continue
+
+            incident = row.get('競賽事件', '無特別報告')
+            if not incident or incident.strip() == '---' or str(incident).lower() == 'nan':
+                incident = '無特別報告'
+
             records.append({
-                'horse_name': horse_name.strip(),
-                'horse_code': (horse_code or '').strip(),
-                'date': date.strip(),
-                'race': race.strip(),
-                'incident': incident.strip(),
+                'horse_name': horse_name,
+                'horse_code': horse_code,
+                'jockey': get_val('騎師'),
+                'trainer': get_val('練馬師'),
+                'actual_weight': get_val('實際 負磅'),
+                'horse_weight': get_val('排位 體重'),
+                'draw': get_val('檔位'),
+                'margin': get_val('頭馬 距離'),
+                'running_position': get_val('沿途 走位'),
+                'finish_time': get_val('完成 時間'),
+                'win_odds': get_val('獨贏 賠率'),
+                'sectional_time': get_val('分段時間'),
+                'date': date,
+                'race': race,
+                'track_cond': get_val('場地狀況'),
+                'info': get_val('完整賽事資訊'),
+                'rank': get_val('名次'),
+                'incident': incident.strip()
             })
 
     return records
@@ -99,12 +132,31 @@ def ingest_to_neo4j(records):
     UNWIND $batch AS record
     MERGE (h:Horse {name: record.horse_name})
     ON CREATE SET h.code = record.horse_code
-    CREATE (i:Incident {
-        date: record.date, 
-        race: record.race, 
-        description: record.incident
+    
+    MERGE (j:Jockey {name: record.jockey})
+    MERGE (t:Trainer {name: record.trainer})
+    MERGE (r:Race {date: record.date, race_no: record.race})
+    ON CREATE SET 
+        r.track_cond = record.track_cond,
+        r.info = record.info
+        
+    CREATE (p:Performance {
+        rank: record.rank,
+        actual_weight: record.actual_weight,
+        horse_weight: record.horse_weight,
+        draw: record.draw,
+        margin: record.margin,
+        running_position: record.running_position,
+        finish_time: record.finish_time,
+        win_odds: record.win_odds,
+        sectional_time: record.sectional_time,
+        incident: record.incident
     })
-    CREATE (h)-[:HAS_INCIDENT]->(i)
+    
+    CREATE (h)-[:PERFORMED_IN]->(p)
+    CREATE (p)-[:AT]->(r)
+    CREATE (j)-[:RODE]->(p)
+    CREATE (t)-[:TRAINED]->(p)
     """
     
     batch_size = 500

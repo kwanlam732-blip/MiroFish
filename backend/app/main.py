@@ -360,12 +360,15 @@ async def simulate(req: SimulateRequest):
     """
     logger.info(f"[V1100] 收到推演指令: {req.prompt}")
 
-    # 正則萃取日期和場次
+    # 正則萃取日期和場次 (強化支援 YYYYMMDD 與 YYYY-MM-DD)
     import re
-    date_match = re.search(r'(\d{4}-\d{2}-\d{2})', req.prompt)
+    date_match = re.search(r'(\d{4}-?\d{2}-?\d{2})', req.prompt)
     race_match = re.search(r'第\s*(\d+)\s*場', req.prompt)
     
-    target_date = date_match.group(1) if date_match else None
+    target_date = None
+    if date_match:
+        raw_date = date_match.group(1).replace("-", "")
+        target_date = f"{raw_date[:4]}-{raw_date[4:6]}-{raw_date[6:]}"
     target_race = race_match.group(1) if race_match else None
     
     logger.info(f"[V1100] 萃取參數: date={target_date}, race={target_race}")
@@ -489,3 +492,119 @@ def _inject_reality_seeds(file_paths: list[str]):
         raise
     
     logger.info(f"[V1100] 批次注入完成，共處理 {len(file_paths)} 個檔案，總計 {total_records} 筆記錄")
+
+
+# ═══════════════════════════════════════════════
+#  Phantom Bridge (幽靈橋接協議) - 偽裝舊版 Zep 前端
+# ═══════════════════════════════════════════════
+
+@app.post("/api/graph/ontology/generate")
+async def generate_ontology():
+    """本體生成偽裝：直接回傳 V1100 專屬本體，跳過 LLM 呼叫"""
+    logger.info("[Phantom Bridge] 攔截 Ontology 請求，回傳 V1100 專屬賽馬本體")
+    return JSONResponse(content={
+        "status": "success",
+        "data": {
+            "entity_types": ["Horse (馬匹)", "Race (賽事)", "Incident (賽事事件)", "Jockey (騎師)", "Trainer (練馬師)"],
+            "relation_types": ["PARTICIPATES_IN (參賽)", "INVOLVED_IN (捲入事件)", "RIDDEN_BY (策騎)"]
+        }
+    })
+
+@app.post("/api/graph/build")
+async def build_graph():
+    """圖譜構建回報：向本地 Neo4j 查詢真實節點數量"""
+    logger.info("[Phantom Bridge] 攔截 Build Graph 請求，查詢 Neo4j 狀態")
+    nodes_count = 0
+    edges_count = 0
+    try:
+        driver = neo4j_db._get_driver()
+        with driver.session() as session:
+            n_res = session.run("MATCH (n) RETURN count(n) AS c")
+            nodes_count = n_res.single()["c"]
+            e_res = session.run("MATCH ()-[r]->() RETURN count(r) AS c")
+            edges_count = e_res.single()["c"]
+        logger.info(f"[Phantom Bridge] 查詢結果：Nodes={nodes_count}, Edges={edges_count}")
+    except Exception as e:
+        logger.error(f"[Phantom Bridge] Neo4j 查詢失敗: {e}")
+        
+    return JSONResponse(content={
+        "status": "success",
+        "message": "Neo4j 本地圖譜構建完成",
+        "stats": {"entities": nodes_count, "relations": edges_count, "schemas": 5}
+    })
+
+@app.post("/api/simulation/create")
+async def create_simulation():
+    """模擬環境初始化偽裝：回傳綠燈"""
+    logger.info("[Phantom Bridge] 攔截 Simulation Create 請求，核發通行證")
+    return JSONResponse(content={
+        "status": "success",
+        "message": "V1100 蜂群推演環境已就緒，等待首長下達戰術指令。"
+    })
+
+@app.post("/api/simulation/prepare")
+async def prepare_simulation():
+    """Agent 人設與劇本覆寫：抹除前朝資料，提供賽馬矩陣配置"""
+    logger.info("[Phantom Purge] 攔截 Simulation Prepare 請求，注入 V1100 賽馬矩陣配置")
+    return JSONResponse(content={
+        "status": "success",
+        "data": {
+            "agents": [
+                {"id": "agent_1", "name": "量化分析師", "persona": "專注於檔位、負磅與步速的數據流專家", "role": "Analyst"},
+                {"id": "agent_2", "name": "晨操觀察員", "persona": "緊盯馬匹試閘狀態與體能變化的實地觀察者", "role": "Observer"},
+                {"id": "agent_3", "name": "圖譜情報官", "persona": "精通 Neo4j 歷史受阻與意外事件的特工", "role": "Intelligence"}
+            ],
+            "config": {
+                "duration": 24, "rounds": 10, "peak_hours": ["19:00", "20:00"]
+            },
+            "narrative": {
+                "direction": "針對即將到來的賽事進行多維度推演，尋找被市場低估的 Alpha 價值馬匹。",
+                "initial_posts": [
+                    {"agent": "量化分析師", "content": "排位表已鎖定，準備匯入模型進行基礎機率計算。"},
+                    {"agent": "圖譜情報官", "content": "Neo4j 記憶庫已連線，正在提取目標馬匹的歷史受阻與傷患紀錄。"}
+                ]
+            }
+        }
+    })
+
+@app.post("/api/simulation/start")
+async def start_simulation(req: SimulateRequest = None):
+    """終極點火與實體對接：觸發本地 Qwen 推演"""
+    logger.info("[Phantom Purge] 攔截 Simulation Start 請求，啟動本地 V1100 蜂群引擎")
+    
+    # 若前端沒有傳入 prompt，提供預設指令
+    prompt = req.prompt if req else "推演下一場重點賽事"
+    
+    # 將推演任務丟到背景執行
+    asyncio.create_task(_run_swarm_prediction_task(prompt))
+    
+    return JSONResponse(content={
+        "status": "success",
+        "message": "V1100 蜂群引擎已點火！請查看後端終端機獲取戰術報告。",
+        "simulation_id": "v1100_strike_001"
+    })
+
+async def _run_swarm_prediction_task(prompt: str):
+    """背景執行蜂群推演的封裝函數"""
+    logger.info(f"[系統] 收到前端點火指令，開始執行 V1100 蜂群推演... 指令: {prompt}")
+    try:
+        # 正則萃取日期和場次 (強化支援 YYYYMMDD 與 YYYY-MM-DD)
+        import re
+        date_match = re.search(r'(\d{4}-?\d{2}-?\d{2})', prompt)
+        race_match = re.search(r'第\s*(\d+)\s*場', prompt)
+        
+        target_date = None
+        if date_match:
+            raw_date = date_match.group(1).replace("-", "")
+            target_date = f"{raw_date[:4]}-{raw_date[4:6]}-{raw_date[6:]}"
+        target_race = race_match.group(1) if race_match else None
+        
+        # 呼叫 v1100_predict_2026.py 中的推演邏輯
+        result = await run_swarm_prediction(
+            prompt=prompt,
+            target_date=target_date,
+            target_race=target_race
+        )
+        logger.info(f"[系統] 蜂群推演背景任務完成。狀態: {result.get('status')}")
+    except Exception as e:
+        logger.error(f"[系統] 蜂群推演背景任務失敗: {e}")

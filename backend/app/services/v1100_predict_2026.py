@@ -44,10 +44,10 @@ def get_runners_for_race(
     uploads_dir: str = "data/uploads"
 ) -> List[str]:
     """
-    從排位表 Markdown 中精準抓取指定場次的所有真實馬名。
+    從排位表 (CSV 或 Markdown) 中精準抓取指定場次的所有真實馬名。
     
     Args:
-        target_date: 賽事日期 (格式: YYYY-MM-DD)
+        target_date: 賽事日期 (格式: YYYY-MM-DD 或 YYYYMMDD)
         target_race: 場次編號 (格式: "1", "2", "3" 等)
         uploads_dir: uploads 目錄路徑
     
@@ -61,22 +61,63 @@ def get_runners_for_race(
         return []
     
     try:
-        # 嘗試找尋對應日期的 Race Card 檔案
+        import pandas as pd
         upload_path = Path(uploads_dir)
+        # 專案根目錄 (假設從 backend/app/services/ 回退到 HorseRacing/)
+        project_root = upload_path.parent.parent.parent
         
-        # 格式：Race_Card_YYYYMMDD_*.md 或 Race_Card_YYYY-MM-DD_*.md
-        date_formatted = target_date.replace("-", "")
+        search_dirs = [upload_path, project_root, project_root / "更新"]
         
-        race_files = list(upload_path.glob(f"Race_Card_{date_formatted}*.md"))
+        search_date = target_date.replace("-", "")
+        
+        # ─── 優先尋找 CSV 排位表 ───
+        csv_files = []
+        for d in search_dirs:
+            if d.exists():
+                csv_files.extend(list(d.glob(f"Race_Card_{search_date}*.csv")))
+                if not csv_files:
+                    csv_files.extend(list(d.glob(f"*{search_date}*.csv")))
+            if csv_files:
+                break
+                
+        if csv_files:
+            csv_file = csv_files[0]
+            logger.info(f"[Parser] 讀取 CSV 排位表: {csv_file.name}")
+            df = pd.read_csv(csv_file)
+            
+            if '場次' in df.columns and '馬名' in df.columns:
+                target_race_int = int(str(target_race).replace("第", "").replace("場", "").strip())
+                df['場次'] = pd.to_numeric(df['場次'], errors='coerce')
+                df_race = df[df['場次'] == target_race_int]
+                
+                for _, row in df_race.iterrows():
+                    horse_name = str(row['馬名']).strip()
+                    # 過濾純文字馬名 (移除非中英文的奇怪字符，這裡簡單處理過濾括號與數字)
+                    horse_name = re.sub(r'[\(\)（）\d]', '', horse_name).strip()
+                    if horse_name and horse_name not in ['nan', 'None', '']:
+                        runners.append(horse_name)
+                
+                if runners:
+                    logger.info(f"[Parser] CSV 第 {target_race} 場解析完成，找到 {len(runners)} 匹馬: {', '.join(runners[:5])}...")
+                    return runners
+            logger.warning("[Parser] CSV 缺少 '場次' 或 '馬名' 欄位，退回 MD 模式")
+            
+        # ─── 若無 CSV，退回 MD 模式 ───
+        race_files = []
+        for d in search_dirs:
+            if d.exists():
+                race_files.extend(list(d.glob(f"Race_Card_{search_date}*.md")))
+                if not race_files:
+                    race_files.extend(list(d.glob(f"*{search_date}*.md")))
+            if race_files:
+                break
+        
         if not race_files:
-            race_files = list(upload_path.glob(f"*{date_formatted}*.md"))
-        
-        if not race_files:
-            logger.warning(f"[Parser] 找不到日期 {target_date} 的排位表檔案")
+            logger.warning(f"[Parser] 找不到日期 {target_date} 的排位表檔案 (CSV 或 MD)")
             return []
         
         race_file = race_files[0]
-        logger.info(f"[Parser] 讀取排位表: {race_file.name}")
+        logger.info(f"[Parser] 讀取 MD 排位表: {race_file.name}")
         
         with open(race_file, 'r', encoding='utf-8') as f:
             content = f.read()
@@ -89,7 +130,7 @@ def get_runners_for_race(
             logger.warning(f"[Parser] 找不到第 {target_race} 場的排位表")
             return []
         
-        # 提取該場次的內容（從 "## 第 N 場" 到下一個 "##" 或檔案末尾）
+        # 提取該場次的內容
         start_pos = match.start()
         next_section = re.search(r"\n##\s*第\s*\d+\s*場", content[start_pos + 1:])
         
@@ -100,14 +141,8 @@ def get_runners_for_race(
         
         race_section = content[start_pos:end_pos]
         
-        # 解析 Markdown 表格：
-        # 1. 找到表頭行（包含 "馬號" 和 "馬名"）
-        # 2. 定位 "馬名" 欄的位置
-        # 3. 從資料行中精準抓取該欄的值
-        
         lines = race_section.split('\n')
         
-        # 找表頭行
         header_line = None
         header_idx = -1
         for i, line in enumerate(lines):
@@ -120,7 +155,6 @@ def get_runners_for_race(
             logger.warning(f"[Parser] 無法找到表頭行 (馬號|馬名)")
             return []
         
-        # 解析表頭欄位位置
         headers = [h.strip() for h in header_line.split('|')]
         horse_name_col = -1
         for i, header in enumerate(headers):
@@ -132,8 +166,7 @@ def get_runners_for_race(
             logger.warning(f"[Parser] 無法找到 '馬名' 欄位")
             return []
         
-        # 從表格資料行中抓取馬名
-        for i in range(header_idx + 2, len(lines)):  # skip header and separator
+        for i in range(header_idx + 2, len(lines)):
             line = lines[i].strip()
             if not line or line.startswith('##'):
                 break
@@ -141,11 +174,11 @@ def get_runners_for_race(
                 cells = [c.strip() for c in line.split('|')]
                 if len(cells) > horse_name_col:
                     horse_name = cells[horse_name_col].strip()
-                    # 確保只抓純文字馬名，排除表頭或空值
-                    if horse_name and horse_name not in ['馬名', ''] and not horse_name.startswith('-'):
+                    horse_name = re.sub(r'[\(\)（）\d]', '', horse_name).strip()
+                    if horse_name and horse_name not in ['馬名', '', '-']:
                         runners.append(horse_name)
         
-        logger.info(f"[Parser] 第 {target_race} 場解析完成，找到 {len(runners)} 匹馬: {', '.join(runners[:5])}...")
+        logger.info(f"[Parser] MD 第 {target_race} 場解析完成，找到 {len(runners)} 匹馬: {', '.join(runners[:5])}...")
         
     except Exception as e:
         logger.error(f"[Parser] 排位表解析失敗: {e}")
@@ -168,38 +201,64 @@ def _retrieve_graph_intel(prompt: str, target_date: Optional[str] = None, target
     try:
         import re
         if runners_list and len(runners_list) > 0:
-            # 根據馬名清單，檢索這些馬匹的所有歷史事件
+            # 根據馬名清單，檢索這些馬匹的所有歷史事件 (近因濾鏡限制最多 6 場)
             cypher = (
-                "MATCH (h:Horse)-[r:HAS_INCIDENT]->(i:Incident) "
+                "MATCH (h:Horse)-[:PERFORMED_IN]->(p:Performance)-[:AT]->(r:Race) "
                 "WHERE h.name IN $runners "
+                "WITH h, p, r "
+                "ORDER BY r.date DESC "
+                "WITH h, collect({p: p, r: r})[0..6] AS recent_perfs "
+                "UNWIND recent_perfs AS perf_data "
+                "WITH h, perf_data.p AS p, perf_data.r AS r "
+                "OPTIONAL MATCH (j:Jockey)-[:RODE]->(p) "
+                "OPTIONAL MATCH (t:Trainer)-[:TRAINED]->(p) "
                 "RETURN h.name AS horse, h.code AS code, "
-                "       i.description AS incident, i.date AS date, i.race AS race "
-                "ORDER BY i.date DESC "
-                "LIMIT 200"
+                "       r.date AS date, r.race_no AS race, r.track_cond AS track_cond, "
+                "       j.name AS jockey, t.name AS trainer, "
+                "       p.rank AS rank, p.actual_weight AS actual_weight, "
+                "       p.horse_weight AS horse_weight, p.draw AS draw, "
+                "       p.margin AS margin, p.running_position AS running_position, "
+                "       p.finish_time AS finish_time, p.win_odds AS win_odds, "
+                "       p.sectional_time AS sectional_time, p.incident AS incident "
+                "ORDER BY r.date DESC"
             )
             records = neo4j_db.execute_query_safe(
                 cypher, {"runners": runners_list}, limit=200
             )
         elif target_date:
-            # 如果沒有馬名清單，但有日期，則按日期檢索（舊邏輯保留作為後備）
             cypher = (
-                "MATCH (h:Horse)-[r:HAS_INCIDENT]->(i:Incident) "
-                "WHERE i.date = $date "
+                "MATCH (h:Horse)-[:PERFORMED_IN]->(p:Performance)-[:AT]->(r:Race) "
+                "WHERE r.date = $date "
+                "OPTIONAL MATCH (j:Jockey)-[:RODE]->(p) "
+                "OPTIONAL MATCH (t:Trainer)-[:TRAINED]->(p) "
                 "RETURN h.name AS horse, h.code AS code, "
-                "       i.description AS incident, i.race AS race "
-                "ORDER BY i.race "
+                "       r.date AS date, r.race_no AS race, r.track_cond AS track_cond, "
+                "       j.name AS jockey, t.name AS trainer, "
+                "       p.rank AS rank, p.actual_weight AS actual_weight, "
+                "       p.horse_weight AS horse_weight, p.draw AS draw, "
+                "       p.margin AS margin, p.running_position AS running_position, "
+                "       p.finish_time AS finish_time, p.win_odds AS win_odds, "
+                "       p.sectional_time AS sectional_time, p.incident AS incident "
+                "ORDER BY r.race_no "
                 "LIMIT 100"
             )
             records = neo4j_db.execute_query_safe(
                 cypher, {"date": target_date}, limit=100
             )
         else:
-            # 無日期 → 抓取最新的 50 筆事件作為上下文
             cypher = (
-                "MATCH (h:Horse)-[r:HAS_INCIDENT]->(i:Incident) "
+                "MATCH (h:Horse)-[:PERFORMED_IN]->(p:Performance)-[:AT]->(r:Race) "
+                "OPTIONAL MATCH (j:Jockey)-[:RODE]->(p) "
+                "OPTIONAL MATCH (t:Trainer)-[:TRAINED]->(p) "
                 "RETURN h.name AS horse, h.code AS code, "
-                "       i.description AS incident, i.date AS date, i.race AS race "
-                "ORDER BY i.date DESC "
+                "       r.date AS date, r.race_no AS race, r.track_cond AS track_cond, "
+                "       j.name AS jockey, t.name AS trainer, "
+                "       p.rank AS rank, p.actual_weight AS actual_weight, "
+                "       p.horse_weight AS horse_weight, p.draw AS draw, "
+                "       p.margin AS margin, p.running_position AS running_position, "
+                "       p.finish_time AS finish_time, p.win_odds AS win_odds, "
+                "       p.sectional_time AS sectional_time, p.incident AS incident "
+                "ORDER BY r.date DESC "
                 "LIMIT 50"
             )
             records = neo4j_db.execute_query_safe(cypher, limit=50)
@@ -208,12 +267,21 @@ def _retrieve_graph_intel(prompt: str, target_date: Optional[str] = None, target
             for rec in records:
                 horse = rec.get("horse", "?")
                 code = rec.get("code", "?")
-                incident = rec.get("incident", "無特別報告")
+                date = rec.get("date", "?")
                 race = rec.get("race", "?")
-                date = rec.get("date", target_date if target_date else "?")
-                intel_lines.append(
-                    f"- [{date} R{race}] {horse}({code}): {incident}"
+                
+                # 組合 18 維度日誌
+                log_str = (
+                    f"- [{date} R{race}] {horse}({code}) | "
+                    f"名次:{rec.get('rank', '無')}, 賠率:{rec.get('win_odds', '無')}, "
+                    f"騎師:{rec.get('jockey', '無')}, 練馬師:{rec.get('trainer', '無')}, "
+                    f"檔位:{rec.get('draw', '無')}, 負磅:{rec.get('actual_weight', '無')}, "
+                    f"體重:{rec.get('horse_weight', '無')}, "
+                    f"走位:{rec.get('running_position', '無')}, 距離:{rec.get('margin', '無')}, "
+                    f"時間:{rec.get('finish_time', '無')}({rec.get('sectional_time', '無')}), "
+                    f"場地:{rec.get('track_cond', '無')} | 事件: {rec.get('incident', '無')}"
                 )
+                intel_lines.append(log_str)
 
         logger.info(
             f"[Swarm] 圖譜檢索完成: {len(records)} 筆情報 "
@@ -277,7 +345,7 @@ async def run_swarm_prediction(
     if not runners_list:
         _log("❌ [HALT] 無法獲取排位表名單，推演終止")
         return {
-            "tactical_report": "# ❌ 推演中止\n\n無法從排位表獲取馬匹名單。請確認已上傳對應日期的排位表 Markdown 檔案。",
+            "tactical_report": "# ❌ 推演中止\n\n無法從排位表獲取馬匹名單。請確認已上傳對應日期的排位表 (.md 或 .csv) 檔案，且場次存在。",
             "status_logs": logs,
             "status": "aborted",
         }
@@ -298,29 +366,22 @@ async def run_swarm_prediction(
     _log("🧠 Phase 2: 構建推演矩陣，準備調度 Ollama...")
 
     system_prompt = (
-        "【系統最高鐵律】：你是一個香港賽馬量化分析專家。你的所有思考過程、分析與最終輸出的報告，必須【強制使用繁體中文 (Traditional Chinese)】。嚴禁使用簡體中文！\n\n"
-        "你是 V1100 MiroFish 賽馬推演引擎的首席分析官。\n"
-        "你的任務是根據歷史情報進行專業的賽馬推演分析。\n\n"
-        "## 【絕對鐵律】\n"
-        f"本場賽事出賽馬匹名單為：{', '.join(runners_list)}\n"
-        "你輸出的報告與分析，絕對、只能、必須使用這份名單內的馬名！\n"
-        "嚴禁使用「馬匹A」、「馬匹B」等代號或任何不在名單中的馬名！\n"
-        "如果無法使用名單中的馬名進行分析，則必須標註 [INVALID_RUNNER]。\n\n"
-        "## 【防胡扯裝甲 (Anti-BS Protocol)】\n"
-        "如果檢索到的歷史情報中【沒有】某匹馬的資料，請誠實標註「缺乏歷史數據」，並僅根據其物理特性進行保守評估。嚴禁捏造該馬匹「近期表現出色」等無根據的賽績！\n\n"
-        "## 【去重與信心過濾規範】\n"
-        "1. 嚴禁在報告中重複提及同一匹馬（例如不能重複提起「齊歡最樂」）\n"
-        "2. 對每匹重點馬匹標注信心指數 (0-100)\n"
-        "3. 信心指數低於 80 的馬匹，必須標註 [LOW_CONFIDENCE]\n"
-        "4. 只列出信心指數最高的 3-5 匹馬作為重點分析，其餘馬匹簡要提及\n\n"
-        "## 輸出規範\n"
-        "1. 強制使用繁體中文 (Traditional Chinese)\n"
-        "2. 以 Markdown 格式輸出戰術報告\n"
-        "3. 報告必須包含：推演摘要、重點馬匹分析、風險評估\n"
-        "4. 對每匹重點馬匹標注信心指數 (0-100)\n"
-        "5. 信心指數低於 80 的馬匹標注 [LOW_CONFIDENCE]\n"
-        "6. 嚴禁編造不存在的馬匹名稱與賽績\n"
-        "7. 嚴禁重複提及同一匹馬\n"
+        "【系統最高鐵律】\n"
+        "1. 語系鎖定：你必須、絕對、只能使用「繁體中文 (zh-TW)」輸出。嚴禁使用簡體字！\n"
+        "2. 你的身分：你是「V1100 香港賽馬量化狙擊手」，為首長（投資者）尋找高賠率、高勝率的 Alpha 馬匹。\n"
+        "3. 嚴禁角色錯亂：你不是練馬師，也不是騎師！絕對不要給出「請騎師注意起跑」、「建議獸醫檢查」這種廢話。首長只關心「這匹馬會不會贏」、「該不該投注」。\n"
+        "4. 戰術邏輯：利用歷史情報（受阻事件、走位、賠率、負磅）找出破綻。例如：上次受阻但這次排好檔位的馬，就是絕佳的 Alpha 目標。\n"
+        "5. 輸出強制格式：你必須嚴格選出「最有可能勝出的 4 匹馬」，並給予 1 到 4 名的排序與信心指數。\n\n"
+        "【輸出格式範本】\n"
+        "=== V1100 終極戰術報告 ===\n"
+        "## 🎯 狙擊名單 (Top 4 預測)\n"
+        "### 1. [馬名] (信心指數: XX%)\n"
+        "- **量化優勢**: (根據歷史名次、時間、負磅分析)\n"
+        "- **事件紅利**: (上次受阻、這次可能反彈的原因)\n\n"
+        "### 2. [馬名] (信心指數: XX%)\n"
+        "... (依序給出 4 匹馬)\n\n"
+        "## ⚠️ 戰術避險警告\n"
+        "(指出哪幾匹熱門馬可能有隱患，例如頻繁受傷或走位不佳，建議避開)\n"
     )
 
     user_prompt = (
@@ -328,12 +389,7 @@ async def run_swarm_prediction(
         f"{', '.join(runners_list)}\n\n"
         f"## 首長指令\n{prompt}\n\n"
         f"## 圖譜記憶情報 (來自 Neo4j)\n{graph_intel}\n\n"
-        "請根據以上情報與馬匹名單，進行蜂群推演並輸出戰術報告。\n"
-        "報告格式：\n"
-        "# V1100 戰術報告\n"
-        "## 推演摘要\n"
-        "## 重點馬匹分析\n"
-        "## 風險評估與建議\n"
+        "請根據以上情報與馬匹名單，嚴格遵照系統鐵律與格式範本進行狙擊推演。\n"
     )
 
     # ─── Phase 3: VRAM Shield 保護下調度 LLM ───
@@ -355,7 +411,7 @@ async def run_swarm_prediction(
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt},
                     ],
-                    temperature=0.4,
+                    temperature=0.1,
                     max_tokens=4096,
                 ),
             )
