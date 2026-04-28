@@ -2,6 +2,7 @@ import os
 import re
 import glob
 import sys
+import csv
 from dotenv import load_dotenv
 
 # Ensure we can import the backend utils
@@ -41,16 +42,7 @@ def process_markdown_file(file_path):
         # Extract incident
         incident_match = re.search(r'- \*\*核心事件\*\*:\s+(.*)', body)
         incident = incident_match.group(1).strip() if incident_match else "無特別報告"
-        
-        # Only ingest if there's an actual incident worth reporting, or perhaps all?
-        # "無特別報告" means no special report. We might still want to record the race entry, but the user specifies "最重要的 核心事件". 
-        # Let's include everything, as it models the horse's history.
-        if incident == "無特別報告":
-            continue # To save space, let's only ingest actual incidents. Wait, maybe we should just ingest it all. Let's ingest all.
-            # No wait, Neo4j is a graph database, empty incidents might clutter it. 
-            # I will ingest all because it can also just act as a race history graph. Let's just follow the user's explicit instructions:
-            # CREATE (i:Incident {date: $date, race: $race, description: $incident})
-            
+
         records.append({
             'horse_name': horse_name,
             'horse_code': horse_code,
@@ -60,6 +52,44 @@ def process_markdown_file(file_path):
         })
 
     return records
+
+
+def process_csv_file(file_path):
+    print(f"Processing CSV file: {file_path}")
+    records = []
+
+    with open(file_path, 'r', encoding='utf-8-sig', newline='') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            horse_name = row.get('horse_name') or row.get('horse') or row.get('馬名') or row.get('馬匹')
+            horse_code = row.get('horse_code') or row.get('code') or row.get('馬代號')
+            date = row.get('date') or row.get('日期')
+            race = row.get('race') or row.get('場次') or row.get('race_no') or row.get('race_number')
+            incident = row.get('incident') or row.get('description') or row.get('事件') or '無特別報告'
+
+            if not horse_name or not date or not race:
+                continue
+
+            records.append({
+                'horse_name': horse_name.strip(),
+                'horse_code': (horse_code or '').strip(),
+                'date': date.strip(),
+                'race': race.strip(),
+                'incident': incident.strip(),
+            })
+
+    return records
+
+
+def process_file(file_path):
+    suffix = os.path.splitext(file_path)[1].lower()
+    if suffix in {'.md', '.markdown'}:
+        return process_markdown_file(file_path)
+    if suffix == '.csv':
+        return process_csv_file(file_path)
+    print(f"Unsupported file type for ingestion: {suffix}")
+    return []
+
 
 def ingest_to_neo4j(records):
     print(f"Ingesting {len(records)} records to Neo4j...")

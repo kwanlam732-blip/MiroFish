@@ -40,17 +40,46 @@ class Neo4jDriver:
         if self._driver is None:
             try:
                 from neo4j import GraphDatabase
+                from neo4j.exceptions import AuthError, ServiceUnavailable
+                
+                logger.info(f"[Neo4j] 嘗試連線至: {self.uri}")
+                logger.info(f"[Neo4j] 使用認證帳號: {self.user}")
+                
                 self._driver = GraphDatabase.driver(
                     self.uri, auth=(self.user, self.password)
                 )
-                logger.info(f"[Neo4j] 已連線至 {self.uri}")
+                
+                # 驗證連線
+                with self._driver.session() as session:
+                    session.run("RETURN 1")
+                
+                logger.info(f"[Neo4j] ✅ 已連線至 {self.uri}")
+                
             except ImportError:
-                raise ImportError(
-                    "[HALT] neo4j 套件未安裝。請執行: pip install neo4j"
-                )
+                error_msg = "[HALT] neo4j 套件未安裝。請執行: pip install neo4j"
+                logger.error(error_msg)
+                raise ImportError(error_msg)
+                
             except Exception as e:
-                logger.error(f"[Neo4j] 連線失敗: {e}")
-                raise
+                error_type = type(e).__name__
+                error_msg = str(e)
+                
+                logger.error(f"[Neo4j] ❌ 連線失敗 ({error_type}): {error_msg}")
+                logger.error(f"[Neo4j] URI: {self.uri}")
+                logger.error(f"[Neo4j] USERNAME: {self.user}")
+                logger.error(f"[Neo4j] 請檢查 .env 檔案中的 NEO4J_URI / NEO4J_USERNAME / NEO4J_PASSWORD")
+                
+                # 提供診斷建議
+                if "Unauthorized" in error_msg or "authentication" in error_msg.lower():
+                    logger.error(f"[Neo4j] 🔑 診斷：認證失敗。密碼可能不正確或用戶不存在。")
+                elif "connection" in error_msg.lower() or "refused" in error_msg.lower():
+                    logger.error(f"[Neo4j] 🔌 診斷：連線被拒絕。Neo4j 服務可能未啟動或埠設定錯誤。")
+                    logger.error(f"[Neo4j] 建議：請確認 Neo4j Desktop 已啟動並點擊 Start！")
+                elif "resolve" in error_msg.lower():
+                    logger.error(f"[Neo4j] 📍 診斷：無法解析主機名稱。請檢查 NEO4J_URI 格式。")
+                
+                raise RuntimeError(f"[HALT] Neo4j 連線失敗: {error_msg}")
+                
         return self._driver
 
     def close(self):
