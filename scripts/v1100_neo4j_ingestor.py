@@ -67,25 +67,25 @@ def process_csv_file(file_path):
                     return '無'
                 return v
 
-            horse_raw = row.get('馬名', '')
-            if not horse_raw or str(horse_raw).lower() == 'nan':
+            # === 絕對對齊協議：對齊 CSV 標題 ===
+            date = row.get('賽事日期', '').strip()
+            race = row.get('場次', '').strip()
+            horse_raw = row.get('馬名', '').strip()
+            
+            if not date or not race or not horse_raw or str(horse_raw).lower() == 'nan':
                 continue
 
-            # 處理馬名與馬號
+            # 處理馬名與馬號 (支援 "馬名 (代碼)" 格式或分開的欄位)
             import re
             match = re.search(r'([^\(]+)\s*\(([^\)]+)\)', horse_raw)
             if match:
                 horse_name = match.group(1).strip()
                 horse_code = match.group(2).strip()
             else:
-                horse_name = horse_raw.strip()
+                horse_name = horse_raw
                 horse_code = row.get('馬號', '').strip()
 
-            date = row.get('賽事日期', '').strip()
-            race = row.get('場次', '').strip()
-            if not date or not race:
-                continue
-
+            # 提取 18 維度標準特徵
             incident = row.get('競賽事件', '無特別報告')
             if not incident or incident.strip() == '---' or str(incident).lower() == 'nan':
                 incident = '無特別報告'
@@ -105,7 +105,7 @@ def process_csv_file(file_path):
                 'sectional_time': get_val('分段時間'),
                 'date': date,
                 'race': race,
-                'track_cond': get_val('場地狀況'),
+                'track_cond': get_val('場地狀況') or get_val('Track'),
                 'info': get_val('完整賽事資訊'),
                 'rank': get_val('名次'),
                 'incident': incident.strip()

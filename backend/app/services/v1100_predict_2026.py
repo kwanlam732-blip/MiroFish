@@ -151,21 +151,34 @@ def _retrieve_graph_intel(prompt: str, target_date: Optional[str] = None, target
 
         if records:
             for rec in records:
-                horse = rec.get("horse", "?")
-                code = rec.get("code", "?")
+                # === [None 護盾] 實裝：暴力防空檢查 ===
+                raw_horse = rec.get("horse")
+                raw_code = rec.get("code")
+                
+                # 任何核心馬名為 None 的記錄直接跳過，防止後續崩潰
+                if raw_horse is None:
+                    continue
+                    
+                horse = str(raw_horse).replace(' ', '')
+                code = str(raw_code).replace(' ', '') if raw_code else "?"
+                
                 date = rec.get("date", "?")
                 race = rec.get("race", "?")
                 
-                # 組合 18 維度日誌
+                # 組合 18 維度日誌，對所有屬性實施安全獲取
+                def safe_get(key):
+                    val = rec.get(key)
+                    return "無" if val is None or str(val).lower() == 'nan' else str(val)
+
                 log_str = (
                     f"- [{date} R{race}] {horse}({code}) | "
-                    f"名次:{rec.get('rank', '無')}, 賠率:{rec.get('win_odds', '無')}, "
-                    f"騎師:{rec.get('jockey', '無')}, 練馬師:{rec.get('trainer', '無')}, "
-                    f"檔位:{rec.get('draw', '無')}, 負磅:{rec.get('actual_weight', '無')}, "
-                    f"體重:{rec.get('horse_weight', '無')}, "
-                    f"走位:{rec.get('running_position', '無')}, 距離:{rec.get('margin', '無')}, "
-                    f"時間:{rec.get('finish_time', '無')}({rec.get('sectional_time', '無')}), "
-                    f"場地:{rec.get('track_cond', '無')} | 事件: {rec.get('incident', '無')}"
+                    f"名次:{safe_get('rank')}, 賠率:{safe_get('win_odds')}, "
+                    f"騎師:{safe_get('jockey')}, 練馬師:{safe_get('trainer')}, "
+                    f"檔位:{safe_get('draw')}, 負磅:{safe_get('actual_weight')}, "
+                    f"體重:{safe_get('horse_weight')}, "
+                    f"走位:{safe_get('running_position')}, 距離:{safe_get('margin')}, "
+                    f"時間:{safe_get('finish_time')}({safe_get('sectional_time')}), "
+                    f"場地:{safe_get('track_cond')} | 事件: {safe_get('incident')}"
                 )
                 intel_lines.append(log_str)
 
