@@ -18,6 +18,7 @@ V1100 全息指揮台 — FastAPI 後端總線
 
 import asyncio
 import logging
+import os
 from pathlib import Path
 from contextlib import asynccontextmanager
 from typing import List
@@ -213,17 +214,22 @@ if STATIC_DIR.exists():
 async def serve_console():
     """
     根路由：載入 V1100 全息指揮台前端頁面。
-    檔案位置：backend/templates/v1100_console.html
+    強制對齊：確保從 localhost:8000 直接訪問。
     """
+    # 探測優先級 1：backend/templates/ (標準路徑)
     html_path = TEMPLATES_DIR / "v1100_console.html"
+    
+    # 探測優先級 2：同級目錄 (防錯路徑)
     if not html_path.exists():
+        html_path = BACKEND_DIR / "v1100_console.html"
+        
+    if not html_path.exists():
+        logger.error(f"[V1100] 找不到全息介面！路徑探測失敗：{TEMPLATES_DIR}")
         raise HTTPException(
             status_code=404,
-            detail=(
-                "[V1100] v1100_console.html 尚未部署。"
-                f" 請將檔案置於: {html_path}"
-            ),
+            detail=f"[V1100] v1100_console.html 遺失。請確保檔案存在於: {TEMPLATES_DIR}"
         )
+        
     return FileResponse(str(html_path), media_type="text/html")
 
 
