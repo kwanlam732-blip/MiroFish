@@ -457,11 +457,9 @@
                     addLog(`歷史金庫灌注成功: ${result.message}`, 'system');
                     await initGraph(); // 刷新雷達
                     alert('✅ 歷史金庫灌注完成！');
-                } else {
-                    addLog(`歷史灌注失敗: ${result.detail || '未知錯誤'}`, 'error');
-                }
             } catch (error) {
-                addLog(`網路或伺服器異常: ${error.message}`, 'error');
+                addLog(`⚠️ 引擎連線中斷，請確認終端機 Uvicorn 是否仍在運行 (Error: ${error.message})`, 'error');
+                alert('⚠️ 引擎連線中斷！請檢查後端終端機狀態。');
             } finally {
                 historyBtn.disabled = false;
                 hideOverlay();
@@ -499,7 +497,8 @@
                     addLog(`同步失敗: ${result.detail || '未知錯誤'}`, 'error');
                 }
             } catch (error) {
-                addLog(`網路或伺服器異常: ${error.message}`, 'error');
+                addLog(`⚠️ 引擎連線中斷，請確認終端機 Uvicorn 是否仍在運行 (Error: ${error.message})`, 'error');
+                alert('⚠️ 引擎連線中斷！請檢查後端終端機狀態。');
             } finally {
                 dailyBtn.disabled = false;
                 hideOverlay();
@@ -545,7 +544,8 @@
 
                 addLog(`推演完成 [狀態: ${result.status}]`, 'system');
             } catch (error) {
-                addLog(`推演請求失敗: ${error.message}`, 'error');
+                addLog(`⚠️ 引擎連線中斷，請確認終端機 Uvicorn 是否仍在運行 (Error: ${error.message})`, 'error');
+                alert('⚠️ 引擎連線中斷！請檢查後端終端機狀態。');
             } finally {
                 startBtn.disabled = false;
                 startBtn.textContent = '🚀 啟動推演';

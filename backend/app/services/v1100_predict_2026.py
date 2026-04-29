@@ -28,6 +28,15 @@ from ..utils.llm_client import LLMClient
 logger = logging.getLogger("v1100.swarm_engine")
 
 # ═══════════════════════════════════════════════
+#  [None 護盾] 全局暴力安全清洗函數
+# ═══════════════════════════════════════════════
+def safe_clean(val):
+    """暴力防禦：防止 NoneType 導致 .replace() 或 .strip() 崩潰"""
+    if val is None:
+        return ""
+    return str(val).replace(' ', '').strip()
+
+# ═══════════════════════════════════════════════
 #  [VRAM Shield] 併發鎖 — RTX 3060 Ti (8GB) 防護
 #  嚴禁超過 3 個併發 LLM 請求
 # ═══════════════════════════════════════════════
@@ -43,33 +52,39 @@ def get_runners_for_race(target_date, target_race, uploads_dir="uploads"):
     import glob
     import os
     
-    # 1. 雙重日期掃描 (無破折號與有破折號通吃)
-    clean_date = target_date.replace("-", "")
-    csv_files = glob.glob(os.path.join(uploads_dir, f"*{clean_date}*.csv")) + \
-                glob.glob(os.path.join(uploads_dir, f"*{target_date}*.csv"))
+    # 1. 日期與格式強制歸一化 (暴力同步為 YYYY/MM/DD)
+    if not target_date:
+        return []
+        
+    # 確保日期格式與 CSV 一致 (使用斜槓)
+    standard_date = str(target_date).replace("-", "/")
+    # 建立純數字日期用於檔案名搜尋
+    clean_date_num = standard_date.replace("/", "")
+    
+    csv_files = glob.glob(os.path.join(uploads_dir, f"*{clean_date_num}*.csv")) + \
+                glob.glob(os.path.join(uploads_dir, f"*{str(target_date).replace('/', '-')}*.csv"))
     
     if csv_files:
         try:
             df = pd.read_csv(csv_files[0])
-            # 2. 終極暴力型別對齊：全部強制轉成字串，並削去空白！
+            # 2. 終極暴力型別對齊
             df['場次'] = df['場次'].astype(str).str.strip()
+            df['賽事日期'] = df['賽事日期'].astype(str).str.strip().str.replace("-", "/")
             
-            # 確保只抓數字 (防貪婪陷阱)
-            import re
+            # 確保只抓數字
             race_num_match = re.search(r'(\d+)', str(target_race))
             target_race_str = race_num_match.group(1) if race_num_match else str(target_race).strip()
             
-            # 3. 精準狙擊
-            runners = df[df['場次'] == target_race_str]['馬名'].dropna().astype(str).tolist()
-            clean_runners = [r.strip() for r in runners if r.strip()]
+            # 3. 精準狙擊 (日期與場次雙重鎖定)
+            runners = df[(df['場次'] == target_race_str) & (df['賽事日期'] == standard_date)]['馬名'].dropna().astype(str).tolist()
+            clean_runners = [safe_clean(r) for r in runners if safe_clean(r)]
             
             if clean_runners:
-                print(f"[系統] ✅ 馬名清單已鎖定: {', '.join(clean_runners)}")
+                print(f"[系統] ✅ 馬名清單已鎖定 ({standard_date} R{target_race_str}): {', '.join(clean_runners)}")
                 return clean_runners
         except Exception as e:
             print(f"[系統] ❌ CSV 解析崩潰: {e}")
             
-    # 找不到或解析失敗，回傳空陣列觸發 HALT
     return []
 
 
@@ -159,8 +174,8 @@ def _retrieve_graph_intel(prompt: str, target_date: Optional[str] = None, target
                 if raw_horse is None:
                     continue
                     
-                horse = str(raw_horse).replace(' ', '')
-                code = str(raw_code).replace(' ', '') if raw_code else "?"
+                horse = safe_clean(raw_horse)
+                code = safe_clean(raw_code) if raw_code else "?"
                 
                 date = rec.get("date", "?")
                 race = rec.get("race", "?")
@@ -231,6 +246,36 @@ async def run_swarm_prediction(
     _log("⚡ 蜂群推演引擎啟動")
     _log(f"📡 首長指令: {prompt}")
 
+    # ─── Phase 0: 暴力指令解析 (Command Parser Fix) ───
+    # 如果外部未傳入參數，則從 prompt 暴力提取
+    import re
+    if not target_date:
+        date_match = re.search(r'(\d{4}[-/]\d{2}[-/]\d{2})', prompt)
+        if date_match:
+            target_date = date_match.group(1).replace('-', '/')
+            
+    if not target_race:
+        race_match = re.search(r'第\s*(\d+)\s*場', prompt)
+        if race_match:
+            target_race = race_match.group(1)
+
+    # 解析後置校驗：若關鍵參數缺失則報警
+    if not target_date or not target_race:
+        _log(f"❌ 指令解析失敗: date={target_date}, race={target_race}")
+        return {
+            "tactical_report": (
+                "# ❌ 指令解析失敗\n\n"
+                f"偵測不到日期或場次。抓取結果：日期=`{target_date}`, 場次=`{target_race}`。\n\n"
+                "請確保您的指令包含正確的格式，例如：\n"
+                "- `推演 2026/04/29 第 2 場`\n"
+                "- `分析 2026-04-29 第 1 場`"
+            ),
+            "status_logs": logs,
+            "status": "error",
+        }
+
+    _log(f"🎯 指令解析成功: 日期=`{target_date}`, 場次=`{target_race}`")
+
     # ─── Phase 1.5: 排位表名單檢索（絕對鐵律） ───
     _log("📋 Phase 1.5: 從排位表中提取真實馬名清單...")
     
@@ -242,9 +287,11 @@ async def run_swarm_prediction(
     runners_list = get_runners_for_race(target_date, target_race, str(uploads_dir))
     
     if not runners_list:
-        _log("❌ [HALT] 無法獲取排位表名單，推演終止")
+        # 強制執行歸一化以顯示正確的報警日期
+        display_date = safe_clean(target_date).replace('-', '/')
+        _log(f"❌ [HALT] 無法獲取 {display_date} 第 {target_race} 場的數據")
         return {
-            "tactical_report": "# ❌ 推演中止\n\n無法從排位表獲取馬匹名單。請確認已上傳對應日期的排位表 (.md 或 .csv) 檔案，且場次存在。",
+            "tactical_report": f"# ❌ 推演中止\n\n找不到 **{display_date}** 第 **{target_race}** 場的馬匹數據。請確認：\n1. 日期格式是否正確 (建議使用 YYYY/MM/DD)\n2. 是否已上傳對應的排位表 CSV\n3. 該場次是否存在於該日期中",
             "status_logs": logs,
             "status": "aborted",
         }
@@ -303,25 +350,24 @@ async def run_swarm_prediction(
         _log(f"🚀 LLM 推論開始 (Semaphore 剩餘: {VRAM_SEMAPHORE._value})")
 
         try:
-            llm = LLMClient()
-
-
-            # 在執行緒池中呼叫同步的 LLM 客戶端，強制 JSON 模式
-            raw_response = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: llm.chat(
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt},
-                    ],
-                    temperature=0.1,
-                    max_tokens=4096,
-                    response_format={"type": "json_object"},
-                    frequency_penalty=1.2,
-                    presence_penalty=1.2,
-                    extra_body={"format": "json"}, # 針對 Ollama API 原生 JSON 拘束
-                ),
-            )
+            # 使用 Context Manager 確保資源釋放
+            with LLMClient() as llm:
+                # 在執行緒池中呼叫同步的 LLM 客戶端，強制 JSON 模式
+                raw_response = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: llm.chat(
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt},
+                        ],
+                        temperature=0.1,
+                        max_tokens=4096,
+                        response_format={"type": "json_object"},
+                        frequency_penalty=1.2,
+                        presence_penalty=1.2,
+                        extra_body={"format": "json"}, # 針對 Ollama API 原生 JSON 拘束
+                    ),
+                )
 
             # JSON 暴力萃取與清洗 (Regex JSON Extraction)
             import json

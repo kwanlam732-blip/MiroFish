@@ -104,3 +104,16 @@ class LLMClient:
         except json.JSONDecodeError:
             raise ValueError(f"LLM返回的JSON格式无效: {cleaned_response}")
 
+    def close(self):
+        """釋放 httpx 連線資源"""
+        if hasattr(self, 'client') and hasattr(self.client, '_client'):
+            try:
+                self.client.close()
+            except:
+                pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
