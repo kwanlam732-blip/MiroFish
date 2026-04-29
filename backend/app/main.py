@@ -233,11 +233,12 @@ async def get_graph_data(
             detail=f"[V1100] Neo4j 連線失敗 (圖譜雷達離線)：{error_msg}。請檢查 .env 配置和 Neo4j 服務狀態。"
         )
 
-    # ─── Cypher 查詢：抓取有關係的節點對 ───
+    # ─── Cypher 查詢：打破星狀圖，重鑄交織網 (多節點交集) ───
     cypher = (
         "MATCH (n)-[r]->(m) "
-        "RETURN n, r, m "
-        f"LIMIT {limit}"
+        "WITH n, r, m ORDER BY rand() "
+        f"LIMIT {limit} "
+        "RETURN n, r, m"
     )
 
     nodes_map: dict[str, dict] = {}   # 去重用 map: id → node dict
@@ -399,74 +400,64 @@ async def simulate(req: SimulateRequest):
 #  路由 5：POST /api/upload — 現實種子上傳 API
 # ═══════════════════════════════════════════════
 
-@app.post("/api/upload")
-async def upload_reality_seed(files: List[UploadFile] = File(...)):
-    """
-    現實種子上傳 API — 接收卷宗檔案並注入 Neo4j 圖譜記憶。
-
-    **流程：**
-    1. 接收 multipart/form-data 檔案上傳
-    2. 儲存至本地 data/uploads/ 目錄
-    3. 自動調用 v1100_neo4j_ingestor.py 處理並寫入 Neo4j
-    4. 回傳成功狀態
-
-    **支援格式：** Markdown (.md), CSV (.csv)
-    """
-    if not files:
-        raise HTTPException(status_code=400, detail="[V1100] 未提供檔案")
-
+#  路由 5：POST /api/upload/daily — 每日排位表上傳 (臨時情報)
+@app.post("/api/upload/daily")
+async def upload_daily_seed(files: List[UploadFile] = File(...)):
+    """上傳今日排位表，會觸發精準洗地 (僅刪除舊排位資料)"""
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     uploaded_files = []
     for file in files:
-        logger.info(f"[V1100] 收到現實種子檔案: {file.filename}")
+        file_path = UPLOAD_DIR / file.filename
+        content = await file.read()
+        with open(file_path, "wb") as buffer:
+            buffer.write(content)
+        uploaded_files.append(str(file_path))
 
-        # 驗證檔案類型
-        allowed_extensions = {'.md', '.markdown', '.csv'}
-        file_ext = Path(file.filename).suffix.lower()
-        if file_ext not in allowed_extensions:
-            raise HTTPException(
-                status_code=400,
-                detail=f"[V1100] 不支援的檔案格式: {file_ext}。僅支援: {', '.join(allowed_extensions)}",
-            )
-
-        try:
-            # 儲存檔案
-            file_path = UPLOAD_DIR / file.filename
-            content = await file.read()
-            
-            with open(file_path, 'wb') as f:
-                f.write(content)
-            
-            logger.info(f"[V1100] 檔案儲存完成: {file_path}")
-            uploaded_files.append(str(file_path))
-
-        except Exception as e:
-            logger.error(f"[V1100] 檔案儲存失敗: {file.filename} - {e}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"[V1100] 檔案儲存失敗: {file.filename} - {e}",
-            )
-
-    # 觸發批次 Neo4j 注入
     await asyncio.get_event_loop().run_in_executor(
-        None, _inject_reality_seeds, uploaded_files
+        None, _inject_reality_seeds, uploaded_files, True
     )
+    return JSONResponse(content={"status": "success", "message": f"今日排位表已注入，已更新 {len(uploaded_files)} 份情報"})
 
-    logger.info("[V1100] 現實種子注入完成")
-    
-    return JSONResponse(content={
-        "status": "success",
-        "message": f"已成功注入 {len(uploaded_files)} 份卷宗到圖譜記憶"
-    })
+#  路由 6：POST /api/upload/history — 歷史資料庫上傳 (永久記憶)
+@app.post("/api/upload/history")
+async def upload_history_data(files: List[UploadFile] = File(...)):
+    """上傳歷史戰績，不會刪除任何資料，僅進行增量合併"""
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    uploaded_files = []
+    for file in files:
+        file_path = UPLOAD_DIR / file.filename
+        content = await file.read()
+        with open(file_path, "wb") as buffer:
+            buffer.write(content)
+        uploaded_files.append(str(file_path))
+
+    await asyncio.get_event_loop().run_in_executor(
+        None, _inject_reality_seeds, uploaded_files, False
+    )
+    return JSONResponse(content={"status": "success", "message": f"歷史資料庫已增量注入 {len(uploaded_files)} 份卷宗"})
+
 
 
 # ═══════════════════════════════════════════════
 #  現實種子注入輔助函數
 # ═══════════════════════════════════════════════
 
-def _inject_reality_seeds(file_paths: list[str]):
+def _inject_reality_seeds(file_paths: list[str], is_daily: bool = False):
     """注入多個現實種子到 Neo4j 圖譜記憶"""
     import sys
     import os
+    
+    # ─── [精準打擊協議] 僅在注入每日種子前，清除舊有臨時標籤 ───
+    if is_daily:
+        logger.info("[V1100] 啟動精準洗地：清除舊有 DailySeed 臨時節點...")
+        try:
+            # 只刪除帶有 DailySeed 標籤的節點，保留歷史資料 (Horse, Jockey, Trainer 等)
+            neo4j_db.execute_query("MATCH (n:DailySeed) DETACH DELETE n")
+            logger.info("[V1100] 精準洗地完成，已為今日排位表準備純淨空間")
+        except Exception as e:
+            logger.error(f"[V1100] 精準洗地失敗: {e}")
+    else:
+        logger.info("[V1100] 歷史增量模式：跳過洗地，直接進行數據合併")
     
     # 添加 scripts 目錄到路徑
     scripts_dir = BACKEND_DIR.parent / "scripts"
@@ -481,9 +472,10 @@ def _inject_reality_seeds(file_paths: list[str]):
             records = process_file(file_path)
             
             if records:
-                ingest_to_neo4j(records)
-                logger.info(f"[V1100] 成功注入 {len(records)} 筆記錄到 Neo4j (檔案: {Path(file_path).name})")
+                ingest_to_neo4j(records, is_daily=is_daily)
+                logger.info(f"[V1100] 成功注入 {len(records)} 筆記錄到 Neo4j (檔案: {Path(file_path).name}, 每日標籤: {is_daily})")
                 total_records += len(records)
+
             else:
                 logger.warning(f"[V1100] 檔案中未找到有效記錄: {Path(file_path).name}")
             

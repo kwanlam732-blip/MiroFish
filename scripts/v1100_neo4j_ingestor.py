@@ -124,23 +124,37 @@ def process_file(file_path):
     return []
 
 
-def ingest_to_neo4j(records):
-    print(f"Ingesting {len(records)} records to Neo4j...")
+def ingest_to_neo4j(records, is_daily=False):
+    print(f"Ingesting {len(records)} records to Neo4j (is_daily={is_daily})...")
+    
+    # 建立索引以優化 MERGE 效能
+    try:
+        neo4j_db.execute_query("CREATE INDEX horse_name_idx IF NOT EXISTS FOR (h:Horse) ON (h.name)")
+        neo4j_db.execute_query("CREATE INDEX jockey_name_idx IF NOT EXISTS FOR (j:Jockey) ON (j.name)")
+        neo4j_db.execute_query("CREATE INDEX trainer_name_idx IF NOT EXISTS FOR (t:Trainer) ON (t.name)")
+        neo4j_db.execute_query("CREATE INDEX race_key_idx IF NOT EXISTS FOR (r:Race) ON (r.date, r.race_no)")
+    except Exception as e:
+        print(f"Warning: Failed to create indices (might already exist or unsupported version): {e}")
+
+    # 動態構建標籤
+    p_label = ":Performance:DailySeed" if is_daily else ":Performance"
+    r_label = ":Race:DailySeed" if is_daily else ":Race"
     
     # Batch using UNWIND
-    query = """
+    query = f"""
     UNWIND $batch AS record
-    MERGE (h:Horse {name: record.horse_name})
+    MERGE (h:Horse {{name: record.horse_name}})
     ON CREATE SET h.code = record.horse_code
     
-    MERGE (j:Jockey {name: record.jockey})
-    MERGE (t:Trainer {name: record.trainer})
-    MERGE (r:Race {date: record.date, race_no: record.race})
+    MERGE (j:Jockey {{name: record.jockey}})
+    MERGE (t:Trainer {{name: record.trainer}})
+    
+    MERGE (r{r_label} {{date: record.date, race_no: record.race}})
     ON CREATE SET 
         r.track_cond = record.track_cond,
         r.info = record.info
         
-    CREATE (p:Performance {
+    CREATE (p{p_label} {{
         rank: record.rank,
         actual_weight: record.actual_weight,
         horse_weight: record.horse_weight,
@@ -151,13 +165,14 @@ def ingest_to_neo4j(records):
         win_odds: record.win_odds,
         sectional_time: record.sectional_time,
         incident: record.incident
-    })
+    }})
     
     CREATE (h)-[:PERFORMED_IN]->(p)
     CREATE (p)-[:AT]->(r)
     CREATE (j)-[:RODE]->(p)
     CREATE (t)-[:TRAINED]->(p)
     """
+
     
     batch_size = 500
     for i in range(0, len(records), batch_size):
@@ -179,7 +194,16 @@ if __name__ == "__main__":
     print(f"Total records extracted: {len(all_records)}")
     
     if all_records:
-        ingest_to_neo4j(all_records)
+        # ─── [精準打擊協議] 手動執行注入前僅清空臨時標籤 ───
+        print("🚨 [V1100] 啟動精準打擊：正在清除舊有 DailySeed 臨時節點...")
+        try:
+            neo4j_db.execute_query("MATCH (n:DailySeed) DETACH DELETE n")
+            print("✅ [V1100] 臨時節點已清空，準備注入純淨種子")
+        except Exception as e:
+            print(f"⚠️ [V1100] 清空失敗: {e}")
+
+        ingest_to_neo4j(all_records, is_daily=True)
         
     neo4j_db.close()
     print("Ingestion completed.")
+

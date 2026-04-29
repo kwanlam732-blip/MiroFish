@@ -37,7 +37,8 @@ class LLMClient:
         messages: List[Dict[str, str]],
         temperature: float = 0.7,
         max_tokens: int = 4096,
-        response_format: Optional[Dict] = None
+        response_format: Optional[Dict] = None,
+        **kwargs
     ) -> str:
         """
         发送聊天请求
@@ -47,21 +48,23 @@ class LLMClient:
             temperature: 温度参数
             max_tokens: 最大token数
             response_format: 响应格式（如JSON模式）
+            **kwargs: 其他传递给大模型的参数 (如 frequency_penalty)
             
         Returns:
             模型响应文本
         """
-        kwargs = {
+        call_kwargs = {
             "model": self.model,
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
+        call_kwargs.update(kwargs)
         
         if response_format:
-            kwargs["response_format"] = response_format
+            call_kwargs["response_format"] = response_format
         
-        response = self.client.chat.completions.create(**kwargs)
+        response = self.client.chat.completions.create(**call_kwargs)
         content = response.choices[0].message.content
         # 部分模型（如MiniMax M2.5）会在content中包含<think>思考内容，需要移除
         content = re.sub(r'<think>[\s\S]*?</think>', '', content).strip()

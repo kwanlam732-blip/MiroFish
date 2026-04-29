@@ -53,7 +53,11 @@ def get_runners_for_race(target_date, target_race, uploads_dir="uploads"):
             df = pd.read_csv(csv_files[0])
             # 2. 終極暴力型別對齊：全部強制轉成字串，並削去空白！
             df['場次'] = df['場次'].astype(str).str.strip()
-            target_race_str = str(target_race).replace("第", "").replace("場", "").strip()
+            
+            # 確保只抓數字 (防貪婪陷阱)
+            import re
+            race_num_match = re.search(r'(\d+)', str(target_race))
+            target_race_str = race_num_match.group(1) if race_num_match else str(target_race).strip()
             
             # 3. 精準狙擊
             runners = df[df['場次'] == target_race_str]['馬名'].dropna().astype(str).tolist()
@@ -253,17 +257,16 @@ async def run_swarm_prediction(
         "2. 你的身分：你是「V1100 香港賽馬量化狙擊手」，為首長（投資者）尋找高賠率、高勝率的 Alpha 馬匹。\n"
         "3. 嚴禁角色錯亂：你不是練馬師，也不是騎師！絕對不要給出「請騎師注意起跑」、「建議獸醫檢查」這種廢話。首長只關心「這匹馬會不會贏」、「該不該投注」。\n"
         "4. 戰術邏輯：利用歷史情報（受阻事件、走位、賠率、負磅）找出破綻。例如：上次受阻但這次排好檔位的馬，就是絕佳的 Alpha 目標。\n"
-        "5. 輸出強制格式：你必須嚴格選出「最有可能勝出的 4 匹馬」，並給予 1 到 4 名的排序與信心指數。\n\n"
-        "【輸出格式範本】\n"
-        "=== V1100 終極戰術報告 ===\n"
-        "## 🎯 狙擊名單 (Top 4 預測)\n"
-        "### 1. [馬名] (信心指數: XX%)\n"
-        "- **量化優勢**: (根據歷史名次、時間、負磅分析)\n"
-        "- **事件紅利**: (上次受阻、這次可能反彈的原因)\n\n"
-        "### 2. [馬名] (信心指數: XX%)\n"
-        "... (依序給出 4 匹馬)\n\n"
-        "## ⚠️ 戰術避險警告\n"
-        "(指出哪幾匹熱門馬可能有隱患，例如頻繁受傷或走位不佳，建議避開)\n"
+        "5. 【最高強制指令】你必須返回一個純 JSON 物件。絕對不允許改變 JSON 的 Key 名稱！必須 100% 遵守以下結構：\n"
+        "{\n"
+        '  "swarm_analysis": "在這裡進行你所有的分析、100個Agent的辯論、對狀態與賠率的推演...",\n'
+        '  "top_4_picks": [\n'
+        '    {"horse_name": "馬名(代號)", "confidence": "X%", "reason": "量化優勢與圖譜事件"},\n'
+        '    {"horse_name": "馬名(代號)", "confidence": "X%", "reason": "量化優勢與圖譜事件"},\n'
+        '    {"horse_name": "馬名(代號)", "confidence": "X%", "reason": "量化優勢與圖譜事件"},\n'
+        '    {"horse_name": "馬名(代號)", "confidence": "X%", "reason": "量化優勢與圖譜事件"}\n'
+        "  ]\n"
+        "}\n"
     )
 
     user_prompt = (
@@ -271,7 +274,11 @@ async def run_swarm_prediction(
         f"{', '.join(runners_list)}\n\n"
         f"## 首長指令\n{prompt}\n\n"
         f"## 圖譜記憶情報 (來自 Neo4j)\n{graph_intel}\n\n"
-        "請根據以上情報與馬匹名單，嚴格遵照系統鐵律與格式範本進行狙擊推演。\n"
+        "請根據以上情報與馬匹名單，嚴格遵照系統鐵律與格式範本進行狙擊推演。\n\n"
+        "【最高強制指令】\n"
+        "1. 絕對不准使用簡體中文，強制使用繁體中文 (zh-TW)。\n"
+        "2. 嚴禁廢話、嚴禁編造「近期狀態良好」等無根據的評語。\n"
+        "3. 你的回答必須、只能是純 JSON 格式。絕對不准改變 Key 的名稱！\n"
     )
 
     # ─── Phase 3: VRAM Shield 保護下調度 LLM ───
@@ -285,8 +292,9 @@ async def run_swarm_prediction(
         try:
             llm = LLMClient()
 
-            # 在執行緒池中呼叫同步的 LLM 客戶端
-            tactical_report = await asyncio.get_event_loop().run_in_executor(
+
+            # 在執行緒池中呼叫同步的 LLM 客戶端，強制 JSON 模式
+            raw_response = await asyncio.get_event_loop().run_in_executor(
                 None,
                 lambda: llm.chat(
                     messages=[
@@ -295,8 +303,43 @@ async def run_swarm_prediction(
                     ],
                     temperature=0.1,
                     max_tokens=4096,
+                    response_format={"type": "json_object"},
+                    frequency_penalty=1.2,
+                    presence_penalty=1.2,
+                    extra_body={"format": "json"}, # 針對 Ollama API 原生 JSON 拘束
                 ),
             )
+
+            # JSON 暴力萃取與清洗 (Regex JSON Extraction)
+            import json
+            import re
+            
+            # 暴力尋找字串中第一個 { 到最後一個 } 的內容
+            match = re.search(r'\{.*\}', raw_response, re.DOTALL)
+            if not match:
+                raise ValueError("LLM 輸出中找不到任何 JSON 結構！")
+                
+            json_str = match.group(0)
+            
+            try:
+                json_result = json.loads(json_str)
+            except json.JSONDecodeError as e:
+                raise ValueError(f"LLM 返回的 JSON 解析失敗: {e}\n原始擷取內容:\n{json_str[:100]}...")
+
+            # 實裝 Python 沙盒組裝 Markdown
+            swarm_analysis = json_result.get("swarm_analysis", "（無推演分析）")
+            top_picks = json_result.get("top_4_picks", [])
+            
+            tactical_report = "=== V1100 終極戰術報告 ===\n"
+            tactical_report += f"## 🧠 蜂群推演思維 (Swarm Analysis)\n{swarm_analysis}\n\n"
+            tactical_report += "## 🎯 狙擊名單 (Top 4)\n"
+            
+            for i, pick in enumerate(top_picks):
+                # 容錯處理：有些模型可能會自創 Key
+                horse = pick.get("horse_name") or pick.get("horse") or pick.get("name", "?")
+                conf = pick.get("confidence") or pick.get("conf", "?")
+                reason = pick.get("reason") or pick.get("analysis", "?")
+                tactical_report += f"### {i+1}. {horse} (信心指數: {conf})\n- {reason}\n"
 
             elapsed = time.time() - start_time
             _log(f"✅ LLM 推論完成 (耗時: {elapsed:.1f}s)")

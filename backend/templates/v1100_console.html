@@ -114,24 +114,36 @@
             border-color: #00ff88;
             box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
         }
-        #startBtn {
+        #startBtn:hover, #dailyBtn:hover, #historyBtn:hover {
+            background: #00cc77;
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.5);
+        }
+        #startBtn:disabled, #dailyBtn:disabled, #historyBtn:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+        #dailyBtn {
             padding: 0.75rem 1.5rem;
-            background: #00ff88;
-            border: none;
+            background: rgba(0, 255, 136, 0.1);
+            border: 1px solid #00ff88;
             border-radius: 6px;
-            color: #0a0e17;
+            color: #00ff88;
             font-weight: bold;
             cursor: pointer;
             transition: all 0.3s ease;
         }
-        #startBtn:hover {
-            background: #00cc77;
-            box-shadow: 0 0 20px rgba(0, 255, 136, 0.5);
+        #historyBtn {
+            padding: 0.75rem 1.5rem;
+            background: rgba(116, 185, 255, 0.1);
+            border: 1px solid #74b9ff;
+            border-radius: 6px;
+            color: #74b9ff;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
         }
-        #startBtn:disabled {
-            background: #666;
-            cursor: not-allowed;
-        }
+
+
         .terminal {
             flex: 1;
             padding: 1rem;
@@ -219,11 +231,17 @@
                     <label for="file-input" id="file-input-label">📎 選擇現實種子檔案 (MD/CSV)</label>
                     <input type="file" id="file-input" accept=".md,.markdown,.csv" multiple style="display: none;">
                     <span id="file-name">未選擇檔案</span>
+                    <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
+                        <button id="historyBtn">🏛️ 注入歷史 (增量)</button>
+                        <button id="dailyBtn">🎯 今日排位 (精準洗地)</button>
+                    </div>
                 </div>
+
                 <div class="input-group">
                     <input type="text" id="prompt-input" placeholder="輸入推演指令 (例如: 請推演 2026-03-29 第 2 場)" value="請推演 2026-03-29 第 2 場">
                     <button id="startBtn">🚀 啟動蜂群推演</button>
                 </div>
+
             </div>
 
             <div class="terminal" id="terminal-logs">
@@ -240,11 +258,15 @@
     <script>
         const promptInput = document.getElementById('prompt-input');
         const startBtn = document.getElementById('startBtn');
+        const dailyBtn = document.getElementById('dailyBtn');
+        const historyBtn = document.getElementById('historyBtn');
+
         const terminalLogs = document.getElementById('terminal-logs');
         const graphContainer = document.getElementById('graph-container');
         const graphLoading = document.getElementById('graph-loading');
         const fileInput = document.getElementById('file-input');
         const fileName = document.getElementById('file-name');
+
 
         let graphChart = null;
 
@@ -384,6 +406,87 @@
             addLog('[雷達] 圖譜渲染完成', 'system');
         }
 
+        // 每日排位按鈕邏輯
+        dailyBtn.addEventListener('click', async () => {
+            const files = fileInput.files;
+            if (files.length === 0) {
+                addLog('[系統] 請先選擇今日排位檔案', 'error');
+                return;
+            }
+
+            dailyBtn.disabled = true;
+            dailyBtn.textContent = '🎯 正在注入...';
+            addLog('[系統] 啟動精準打擊：正在清除舊排位並重鑄圖譜...', 'system');
+
+            try {
+                const formData = new FormData();
+                for (let i = 0; i < files.length; i++) {
+                    formData.append('files', files[i]);
+                }
+                
+                const response = await fetch('/api/upload/daily', {
+                    method: 'POST',
+                    body: formData,
+                });
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    addLog(`[系統] 注入失敗: ${errorText}`, 'error');
+                    throw new Error(errorText);
+                }
+                
+                const result = await response.json();
+                addLog(`[系統] ${result.message}`, 'system');
+                await initGraph();
+            } catch (error) {
+                addLog(`[系統] 異常: ${error.message}`, 'error');
+            } finally {
+                dailyBtn.disabled = false;
+                dailyBtn.textContent = '🎯 今日排位 (精準洗地)';
+            }
+        });
+
+        // 歷史資料按鈕邏輯
+        historyBtn.addEventListener('click', async () => {
+            const files = fileInput.files;
+            if (files.length === 0) {
+                addLog('[系統] 請先選擇歷史資料檔案', 'error');
+                return;
+            }
+
+            historyBtn.disabled = true;
+            historyBtn.textContent = '🏛️ 正在吞噬...';
+            addLog('[系統] 啟動批量吞噬：正在增量更新歷史金庫...', 'system');
+
+            try {
+                const formData = new FormData();
+                for (let i = 0; i < files.length; i++) {
+                    formData.append('files', files[i]);
+                }
+                
+                const response = await fetch('/api/upload/history', {
+                    method: 'POST',
+                    body: formData,
+                });
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    addLog(`[系統] 吞噬失敗: ${errorText}`, 'error');
+                    throw new Error(errorText);
+                }
+                
+                const result = await response.json();
+                addLog(`[系統] ${result.message}`, 'system');
+                await initGraph();
+            } catch (error) {
+                addLog(`[系統] 異常: ${error.message}`, 'error');
+            } finally {
+                historyBtn.disabled = false;
+                historyBtn.textContent = '🏛️ 注入歷史 (增量)';
+            }
+        });
+
+
         startBtn.addEventListener('click', async () => {
             const prompt = promptInput.value.trim();
             if (!prompt) {
@@ -391,43 +494,14 @@
                 return;
             }
 
-            // 禁用按鈕，防止重複點擊
+            // 禁用按鈕
             startBtn.disabled = true;
-            startBtn.textContent = '⏳ 處理中...';
-
-            const files = fileInput.files;
+            startBtn.textContent = '⏳ 推演中...';
+            addLog('[系統] 正在呼叫蜂群大腦進行戰術推演...', 'system');
 
             try {
-                // STEP A: 如果有檔案，先上傳現實種子
-                if (files.length > 0) {
-                    addLog('[系統] 正在解析現實種子並寫入 Neo4j...', 'system');
-                    
-                    const formData = new FormData();
-                    for (let i = 0; i < files.length; i++) {
-                        formData.append('files', files[i]);
-                    }
-                    
-                    const uploadResponse = await fetch('/api/upload', {
-                        method: 'POST',
-                        body: formData,
-                    });
-                    
-                    if (!uploadResponse.ok) {
-                        const errorText = await uploadResponse.text();
-                        console.error("後端 422 錯誤詳情:", errorText);
-                        addLog(`[系統] 上傳失敗 (${uploadResponse.status}): ${errorText}`, 'error');
-                        throw new Error(`上傳失敗: ${uploadResponse.status}`);
-                    }
-                    
-                    const uploadResult = await uploadResponse.json();
-                    addLog(`[系統] ${uploadResult.message}`, 'system');
-                    
-                    // 重新載入圖譜以顯示新數據
-                    await initGraph();
-                }
+                // 直接執行推演，不再處理檔案
 
-                // STEP B: 執行推演
-                addLog('[系統] 蜂群推演中，請等待...', 'system');
 
                 const response = await fetch('/api/simulate', {
                     method: 'POST',
