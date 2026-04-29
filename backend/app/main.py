@@ -148,38 +148,43 @@ app.add_middleware(
 # === V1100 暴力路由區 (OPERATION ABSOLUTE COUPLING) ===
 
 @app.post("/api/upload/history")
-async def api_upload_history(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
-    """暴力路由：歷史金庫背景灌注"""
+async def api_upload_history(background_tasks: BackgroundTasks, file: List[UploadFile] = File(...)):
+    """暴力路由：歷史金庫背景灌注 (支援多檔案)"""
     try:
         UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-        file_path = UPLOAD_DIR / file.filename
-        content = await file.read()
-        with open(file_path, "wb") as buffer:
-            buffer.write(content)
+        file_paths = []
+        for f in file:
+            file_path = UPLOAD_DIR / f.filename
+            content = await f.read()
+            with open(file_path, "wb") as buffer:
+                buffer.write(content)
+            file_paths.append(str(file_path))
         
         # 呼叫現有的注入邏輯 (歷史模式: is_daily=False)
-        background_tasks.add_task(_inject_reality_seeds, [str(file_path)], False)
+        background_tasks.add_task(_inject_reality_seeds, file_paths, False)
         
-        return JSONResponse(content={"status": "processing", "message": "歷史金庫已開始背景灌注！"})
+        return JSONResponse(content={"status": "processing", "message": f"歷史金庫已開始背景灌注 ({len(file_paths)} 份文件)！"})
     except Exception as e:
         logger.error(f"[V1100] 歷史上傳失敗: {e}")
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
 @app.post("/api/upload/daily")
-async def api_upload_daily(file: UploadFile = File(...)):
-    """暴力路由：今日排位立即同步"""
+async def api_upload_daily(file: List[UploadFile] = File(...)):
+    """暴力路由：今日排位立即同步 (支援多檔案)"""
     try:
         UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-        file_path = UPLOAD_DIR / file.filename
-        content = await file.read()
-        with open(file_path, "wb") as buffer:
-            buffer.write(content)
+        file_paths = []
+        for f in file:
+            file_path = UPLOAD_DIR / f.filename
+            content = await f.read()
+            with open(file_path, "wb") as buffer:
+                buffer.write(content)
+            file_paths.append(str(file_path))
         
         # 呼叫現有的注入邏輯 (每日模式: is_daily=True)
-        # 這裡改為同步執行以符合前端「立即同步」的語意，或使用 BackgroundTasks
-        _inject_reality_seeds([str(file_path)], True)
+        _inject_reality_seeds(file_paths, True)
         
-        return JSONResponse(content={"status": "success", "message": "今日排位已更新！"})
+        return JSONResponse(content={"status": "success", "message": f"今日排位已更新 ({len(file_paths)} 份文件)！"})
     except Exception as e:
         logger.error(f"[V1100] 今日上傳失敗: {e}")
         return JSONResponse(content={"error": str(e)}, status_code=500)
