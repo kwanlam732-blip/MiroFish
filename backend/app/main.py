@@ -22,7 +22,7 @@ from pathlib import Path
 from contextlib import asynccontextmanager
 from typing import List
 
-from fastapi import FastAPI, HTTPException, Query, UploadFile, File
+from fastapi import FastAPI, HTTPException, Query, UploadFile, File, BackgroundTasks, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -143,6 +143,62 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# === V1100 暴力路由區 (OPERATION ABSOLUTE COUPLING) ===
+
+@app.post("/api/upload/history")
+async def api_upload_history(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+    """暴力路由：歷史金庫背景灌注"""
+    try:
+        UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        file_path = UPLOAD_DIR / file.filename
+        content = await file.read()
+        with open(file_path, "wb") as buffer:
+            buffer.write(content)
+        
+        # 呼叫現有的注入邏輯 (歷史模式: is_daily=False)
+        background_tasks.add_task(_inject_reality_seeds, [str(file_path)], False)
+        
+        return JSONResponse(content={"status": "processing", "message": "歷史金庫已開始背景灌注！"})
+    except Exception as e:
+        logger.error(f"[V1100] 歷史上傳失敗: {e}")
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
+@app.post("/api/upload/daily")
+async def api_upload_daily(file: UploadFile = File(...)):
+    """暴力路由：今日排位立即同步"""
+    try:
+        UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        file_path = UPLOAD_DIR / file.filename
+        content = await file.read()
+        with open(file_path, "wb") as buffer:
+            buffer.write(content)
+        
+        # 呼叫現有的注入邏輯 (每日模式: is_daily=True)
+        # 這裡改為同步執行以符合前端「立即同步」的語意，或使用 BackgroundTasks
+        _inject_reality_seeds([str(file_path)], True)
+        
+        return JSONResponse(content={"status": "success", "message": "今日排位已更新！"})
+    except Exception as e:
+        logger.error(f"[V1100] 今日上傳失敗: {e}")
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
+@app.post("/api/simulate")
+async def api_simulate(request: Request):
+    """暴力路由：蜂群推演對接"""
+    try:
+        body = await request.json()
+        prompt = body.get("prompt", "推演最新賽事")
+        logger.info(f"[V1100] 暴力路由收到推演指令: {prompt}")
+        
+        # 直接呼叫現有的推演服務
+        result = await run_swarm_prediction(prompt=prompt)
+        return JSONResponse(content={"status": "success", "report": result.get("tactical_report", "推演完成")})
+    except Exception as e:
+        logger.error(f"[V1100] 推演失敗: {e}")
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
+# ====================================================
 
 # 靜態資源掛載（/static → MF_Local_Engine/static/）
 if STATIC_DIR.exists():
@@ -334,107 +390,14 @@ class SimulateResponse(BaseModel):
 #  路由 4：POST /api/simulate — 蜂群推演 API
 # ═══════════════════════════════════════════════
 
-@app.post("/api/simulate", response_model=SimulateResponse)
-async def simulate(req: SimulateRequest):
-    """
-    蜂群推演 API — 接收首長指令，調度本地 Ollama 進行推演。
-
-    **流程：**
-    1. 從 Neo4j 圖譜記憶檢索相關情報
-    2. [VRAM Shield] 取得併發鎖 (Semaphore=3)
-    3. 調度 Ollama/Qwen2.5:7b 進行蜂群推演
-    4. 回傳 Markdown 格式戰術報告
-
-    **請求 JSON：**
-    ```json
-    {"prompt": "推演 2026-03-29"}
-    ```
-
-    **回應 JSON：**
-    ```json
-    {
-      "tactical_report": "# V1100 戰術報告\\n...",
-      "status_logs": ["[HH:MM:SS] ⚡ 蜂群推演引擎啟動", ...],
-      "status": "completed"
-    }
-    ```
-    """
-    logger.info(f"[V1100] 收到推演指令: {req.prompt}")
-
-    # 正則萃取日期和場次 (強化支援 YYYYMMDD 與 YYYY-MM-DD)
-    import re
-    date_match = re.search(r'(\d{4}-?\d{2}-?\d{2})', req.prompt)
-    race_match = re.search(r'第\s*(\d+)\s*場', req.prompt)
-    
-    target_date = None
-    if date_match:
-        raw_date = date_match.group(1).replace("-", "")
-        target_date = f"{raw_date[:4]}-{raw_date[4:6]}-{raw_date[6:]}"
-    target_race = race_match.group(1) if race_match else None
-    
-    logger.info(f"[V1100] 萃取參數: date={target_date}, race={target_race}")
-
-    try:
-        result = await run_swarm_prediction(
-            prompt=req.prompt,
-            target_date=target_date,
-            target_race=target_race
-        )
-
-        logger.info(
-            f"[V1100] 推演完成: status={result['status']}, "
-            f"report_len={len(result['tactical_report'])}"
-        )
-
-        return JSONResponse(content=result)
-
-    except Exception as e:
-        logger.error(f"[V1100] 推演異常: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"[V1100] 蜂群推演失敗: {e}",
-        )
+# 原有 /api/simulate 已由上方暴力路由區接管
 
 
 # ═══════════════════════════════════════════════
 #  路由 5：POST /api/upload — 現實種子上傳 API
 # ═══════════════════════════════════════════════
 
-#  路由 5：POST /api/upload/daily — 每日排位表上傳 (臨時情報)
-@app.post("/api/upload/daily")
-async def upload_daily_seed(files: List[UploadFile] = File(...)):
-    """上傳今日排位表，會觸發精準洗地 (僅刪除舊排位資料)"""
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    uploaded_files = []
-    for file in files:
-        file_path = UPLOAD_DIR / file.filename
-        content = await file.read()
-        with open(file_path, "wb") as buffer:
-            buffer.write(content)
-        uploaded_files.append(str(file_path))
-
-    await asyncio.get_event_loop().run_in_executor(
-        None, _inject_reality_seeds, uploaded_files, True
-    )
-    return JSONResponse(content={"status": "success", "message": f"今日排位表已注入，已更新 {len(uploaded_files)} 份情報"})
-
-#  路由 6：POST /api/upload/history — 歷史資料庫上傳 (永久記憶)
-@app.post("/api/upload/history")
-async def upload_history_data(files: List[UploadFile] = File(...)):
-    """上傳歷史戰績，不會刪除任何資料，僅進行增量合併"""
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    uploaded_files = []
-    for file in files:
-        file_path = UPLOAD_DIR / file.filename
-        content = await file.read()
-        with open(file_path, "wb") as buffer:
-            buffer.write(content)
-        uploaded_files.append(str(file_path))
-
-    await asyncio.get_event_loop().run_in_executor(
-        None, _inject_reality_seeds, uploaded_files, False
-    )
-    return JSONResponse(content={"status": "success", "message": f"歷史資料庫已增量注入 {len(uploaded_files)} 份卷宗"})
+# 原有重複路由已由上方暴力路由區接管
 
 
 
