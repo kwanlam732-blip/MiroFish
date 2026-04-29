@@ -17,11 +17,12 @@
             justify-content: center;
             min-height: 100vh;
             padding: 2rem;
+            overflow: hidden;
         }
         .console {
             width: 100%;
             max-width: 1400px;
-            height: 800px;
+            height: 90vh;
             border: 1px solid rgba(0, 255, 136, 0.15);
             border-radius: 12px;
             background: rgba(10, 14, 23, 0.9);
@@ -31,7 +32,7 @@
             display: flex;
         }
         .graph-panel {
-            flex: 1;
+            flex: 1.2;
             border-right: 1px solid rgba(0, 255, 136, 0.1);
             display: flex;
             flex-direction: column;
@@ -55,10 +56,11 @@
             flex: 1;
             display: flex;
             flex-direction: column;
+            overflow-y: auto;
         }
         .header {
             background: rgba(0, 255, 136, 0.1);
-            padding: 1rem;
+            padding: 1.5rem;
             text-align: center;
             border-bottom: 1px solid rgba(0, 255, 136, 0.2);
         }
@@ -66,39 +68,110 @@
             font-size: 1.8rem;
             color: #00ff88;
             text-shadow: 0 0 20px rgba(0, 255, 136, 0.3);
+            margin-bottom: 0.5rem;
         }
+        .header p {
+            color: #8395a7;
+            font-size: 0.9rem;
+            letter-spacing: 1px;
+        }
+        
         .input-section {
             padding: 1.5rem;
             border-bottom: 1px solid rgba(0, 255, 136, 0.1);
         }
+
+        /* 雙軌介面佈局 */
+        .track-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        .upload-track {
+            padding: 1.25rem;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.3s ease;
+            display: flex;
+            flex-direction: column;
+        }
+        .upload-track:hover {
+            background: rgba(255, 255, 255, 0.05);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+        .upload-track.history { border-top: 3px solid #74b9ff; }
+        .upload-track.daily { border-top: 3px solid #00ff88; }
+        
+        .upload-track h3 {
+            font-size: 1rem;
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .upload-track.history h3 { color: #74b9ff; }
+        .upload-track.daily h3 { color: #00ff88; }
+
+        .upload-track p {
+            font-size: 0.8rem;
+            color: #8395a7;
+            margin-bottom: 1rem;
+            line-height: 1.4;
+            min-height: 2.8rem;
+        }
+        .file-label-v2 {
+            display: block;
+            padding: 0.6rem;
+            text-align: center;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+            margin-bottom: 0.75rem;
+            border: 1px dashed rgba(255, 255, 255, 0.3);
+            color: #c8d6e5;
+        }
+        .file-label-v2:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: #fff;
+        }
+        .track-btn {
+            width: 100%;
+            padding: 0.75rem;
+            border: none;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-top: auto;
+        }
+        .history .track-btn { background: rgba(116, 185, 255, 0.1); color: #74b9ff; border: 1px solid #74b9ff; }
+        .daily .track-btn { background: rgba(0, 255, 136, 0.1); color: #00ff88; border: 1px solid #00ff88; }
+        
+        .history .track-btn:hover:not(:disabled) { background: #74b9ff; color: #0a0e17; box-shadow: 0 0 15px rgba(116, 185, 255, 0.4); }
+        .daily .track-btn:hover:not(:disabled) { background: #00ff88; color: #0a0e17; box-shadow: 0 0 15px rgba(0, 255, 136, 0.4); }
+        
+        .track-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .file-status {
+            font-size: 0.75rem;
+            color: #576574;
+            margin-bottom: 0.5rem;
+            text-align: center;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
         .input-group {
             display: flex;
             gap: 1rem;
-            margin-bottom: 1rem;
-        }
-        .file-input-group {
-            margin-bottom: 1rem;
-        }
-        #file-input {
-            margin-bottom: 0.5rem;
-        }
-        #file-input-label {
-            display: inline-block;
-            padding: 0.5rem 1rem;
-            background: rgba(0, 255, 136, 0.1);
-            border: 1px solid rgba(0, 255, 136, 0.3);
-            border-radius: 6px;
-            color: #00ff88;
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
-        #file-input-label:hover {
-            background: rgba(0, 255, 136, 0.2);
-        }
-        #file-name {
-            margin-left: 1rem;
-            color: #576574;
-            font-size: 0.9rem;
+            margin-top: 1rem;
         }
         #prompt-input {
             flex: 1;
@@ -114,35 +187,24 @@
             border-color: #00ff88;
             box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
         }
-        #startBtn:hover, #dailyBtn:hover, #historyBtn:hover {
+        #startBtn {
+            padding: 0.75rem 1.5rem;
+            background: #00ff88;
+            border: none;
+            border-radius: 6px;
+            color: #0a0e17;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        #startBtn:hover:not(:disabled) {
             background: #00cc77;
             box-shadow: 0 0 20px rgba(0, 255, 136, 0.5);
         }
-        #startBtn:disabled, #dailyBtn:disabled, #historyBtn:disabled {
-            background: #666;
-            cursor: not-allowed;
+        #startBtn:disabled {
+            background: #444;
+            color: #888;
         }
-        #dailyBtn {
-            padding: 0.75rem 1.5rem;
-            background: rgba(0, 255, 136, 0.1);
-            border: 1px solid #00ff88;
-            border-radius: 6px;
-            color: #00ff88;
-            font-weight: bold;
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
-        #historyBtn {
-            padding: 0.75rem 1.5rem;
-            background: rgba(116, 185, 255, 0.1);
-            border: 1px solid #74b9ff;
-            border-radius: 6px;
-            color: #74b9ff;
-            font-weight: bold;
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
-
 
         .terminal {
             flex: 1;
@@ -151,34 +213,77 @@
             font-family: 'Consolas', 'Monaco', monospace;
             font-size: 0.9rem;
             line-height: 1.4;
+            background: rgba(0, 0, 0, 0.3);
         }
         .log-entry {
             margin-bottom: 0.5rem;
             padding: 0.25rem 0;
+            border-left: 2px solid transparent;
+            padding-left: 0.5rem;
         }
-        .log-system { color: #00ff88; }
-        .log-error { color: #ff6b6b; }
-        .log-info { color: #74b9ff; }
+        .log-system { color: #00ff88; border-color: #00ff88; }
+        .log-error { color: #ff6b6b; border-color: #ff6b6b; }
+        .log-info { color: #74b9ff; border-color: #74b9ff; }
+        .log-warn { color: #feca57; border-color: #feca57; }
+
+        /* Loading Overlay */
+        .loading-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(10, 14, 23, 0.85);
+            backdrop-filter: blur(10px);
+            z-index: 9999;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #00ff88;
+        }
+        .loading-overlay .spinner {
+            width: 60px;
+            height: 60px;
+            border: 4px solid rgba(0, 255, 136, 0.1);
+            border-top: 4px solid #00ff88;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 1.5rem;
+        }
+        .loading-overlay h2 {
+            font-size: 1.5rem;
+            margin-bottom: 0.5rem;
+            text-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
+        }
+        .loading-overlay p {
+            color: #8395a7;
+        }
+
         .pulse {
             display: inline-block;
-            width: 6px;
-            height: 6px;
+            width: 8px;
+            height: 8px;
             background: #00ff88;
             border-radius: 50%;
-            margin-right: 6px;
+            margin-right: 10px;
             animation: pulse 1.5s ease-in-out infinite;
         }
         @keyframes pulse {
             0%, 100% { opacity: 1; box-shadow: 0 0 4px #00ff88; }
             50% { opacity: 0.3; box-shadow: 0 0 12px #00ff88; }
         }
-        .status {
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .status-bar {
             text-align: center;
-            padding: 0.5rem;
+            padding: 0.75rem;
             background: rgba(0, 255, 136, 0.05);
             border-top: 1px solid rgba(0, 255, 136, 0.1);
-            font-size: 0.9rem;
+            font-size: 0.85rem;
             color: #576574;
+            display: flex;
+            justify-content: center;
+            align-items: center;
         }
         .graph-loading {
             position: absolute;
@@ -188,33 +293,27 @@
             text-align: center;
             color: #576574;
         }
-        .graph-loading .spinner {
-            width: 40px;
-            height: 40px;
-            border: 3px solid rgba(0, 255, 136, 0.1);
-            border-top: 3px solid #00ff88;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 1rem;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
     </style>
 </head>
 <body>
+    <!-- 全局加載遮罩 -->
+    <div id="global-loading" class="loading-overlay">
+        <div class="spinner"></div>
+        <h2 id="loading-title">正在寫入圖譜...</h2>
+        <p id="loading-msg">請稍候，系統正在進行非同步神經重組</p>
+    </div>
+
     <div class="console">
         <!-- 左側圖譜面板 -->
         <div class="graph-panel">
             <div class="graph-header">
-                <h2>🛰️ 知識圖譜雷達</h2>
-                <p>Neo4j 圖譜記憶視覺化</p>
+                <h2>🛰️ 知識圖譜雷達 (v1.1)</h2>
+                <p>Neo4j 蜂群記憶實時視覺化</p>
             </div>
             <div id="graph-container">
                 <div class="graph-loading" id="graph-loading">
                     <div class="spinner"></div>
-                    <p>載入圖譜資料...</p>
+                    <p>正在同步圖譜節點...</p>
                 </div>
             </div>
         </div>
@@ -223,240 +322,124 @@
         <div class="control-panel">
             <div class="header">
                 <h1>⚡ V1100 全息指揮台</h1>
-                <p>MiroFish Local Engine — 蜂群推演指揮中心</p>
+                <p>MIROFISH LOCAL ENGINE — 作戰指揮中心</p>
             </div>
 
             <div class="input-section">
-                <div class="file-input-group">
-                    <label for="file-input" id="file-input-label">📎 選擇現實種子檔案 (MD/CSV)</label>
-                    <input type="file" id="file-input" accept=".md,.markdown,.csv" multiple style="display: none;">
-                    <span id="file-name">未選擇檔案</span>
-                    <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
-                        <button id="historyBtn">🏛️ 注入歷史 (增量)</button>
-                        <button id="dailyBtn">🎯 今日排位 (精準洗地)</button>
+                <!-- 雙軌上傳區 -->
+                <div class="track-container">
+                    <!-- Track 1: History -->
+                    <div class="upload-track history">
+                        <h3>💾 灌注歷史金庫</h3>
+                        <p>⚠️ 僅需上傳一次。用於建立歷史賽果與事件圖譜，資料將永久保留。</p>
+                        <div class="file-status" id="history-file-status">尚未加載卷宗</div>
+                        <label for="history-file-input" class="file-label-v2">📎 選擇歷史卷宗 (CSV)</label>
+                        <input type="file" id="history-file-input" accept=".csv" multiple style="display: none;">
+                        <button id="historyBtn" class="track-btn">🏛️ 開始灌注</button>
+                    </div>
+
+                    <!-- Track 2: Daily -->
+                    <div class="upload-track daily">
+                        <h3>📝 上傳今日排位</h3>
+                        <p>🔄 每日推演前上傳。將自動清除前次排位，並與金庫進行神經交織。</p>
+                        <div class="file-status" id="daily-file-status">尚未加載排位</div>
+                        <label for="daily-file-input" class="file-label-v2">📎 選擇今日排位 (MD/CSV)</label>
+                        <input type="file" id="daily-file-input" accept=".md,.markdown,.csv" multiple style="display: none;">
+                        <button id="dailyBtn" class="track-btn">🎯 立即同步</button>
                     </div>
                 </div>
 
                 <div class="input-group">
-                    <input type="text" id="prompt-input" placeholder="輸入推演指令 (例如: 請推演 2026-03-29 第 2 場)" value="請推演 2026-03-29 第 2 場">
-                    <button id="startBtn">🚀 啟動蜂群推演</button>
+                    <input type="text" id="prompt-input" placeholder="輸入戰術指令 (例如: 推演 2026-03-29 第 2 場)" value="請推演 2026-03-29 第 2 場">
+                    <button id="startBtn">🚀 啟動推演</button>
                 </div>
-
             </div>
 
             <div class="terminal" id="terminal-logs">
                 <div class="log-entry log-system">[系統] V1100 全息指揮台已就緒，等待首長指令...</div>
             </div>
 
-            <div class="status">
+            <div class="status-bar">
                 <span class="pulse"></span>
-                Stage 3 部署完成 · 雷達視覺化已啟動
+                <span>V1100 Phase 3: DUAL TRACK UI 已激活 · 顯存防護監控中</span>
             </div>
         </div>
     </div>
 
     <script>
+        // DOM 元素
         const promptInput = document.getElementById('prompt-input');
         const startBtn = document.getElementById('startBtn');
         const dailyBtn = document.getElementById('dailyBtn');
         const historyBtn = document.getElementById('historyBtn');
+        
+        const historyFileInput = document.getElementById('history-file-input');
+        const dailyFileInput = document.getElementById('daily-file-input');
+        const historyFileStatus = document.getElementById('history-file-status');
+        const dailyFileStatus = document.getElementById('daily-file-status');
 
         const terminalLogs = document.getElementById('terminal-logs');
         const graphContainer = document.getElementById('graph-container');
         const graphLoading = document.getElementById('graph-loading');
-        const fileInput = document.getElementById('file-input');
-        const fileName = document.getElementById('file-name');
-
+        
+        const globalLoading = document.getElementById('global-loading');
+        const loadingTitle = document.getElementById('loading-title');
+        const loadingMsg = document.getElementById('loading-msg');
 
         let graphChart = null;
 
-        // 檔案選擇處理
-        fileInput.addEventListener('change', (e) => {
-            const files = e.target.files;
-            if (files.length > 1) {
-                fileName.textContent = `已鎖定 ${files.length} 份情報卷宗 📦`;
-                fileName.style.color = '#00ff88';
-            } else if (files.length === 1) {
-                fileName.textContent = files[0].name;
-                fileName.style.color = '#00ff88';
-            } else {
-                fileName.textContent = '未選擇檔案';
-                fileName.style.color = '#576574';
-            }
-        });
+        // --- 輔助函式 ---
 
         function addLog(message, type = 'info') {
+            const now = new Date().toLocaleTimeString('zh-TW', { hour12: false });
             const logEntry = document.createElement('div');
             logEntry.className = `log-entry log-${type}`;
-            logEntry.textContent = message;
+            logEntry.textContent = `[${now}] ${message}`;
             terminalLogs.appendChild(logEntry);
             terminalLogs.scrollTop = terminalLogs.scrollHeight;
         }
 
-        // 初始化圖譜
-        async function initGraph() {
-            try {
-                addLog('[雷達] 請求圖譜資料...', 'info');
-                const response = await fetch('/api/graph_data');
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                }
-                const data = await response.json();
-
-                addLog(`[雷達] 載入 ${data.nodes.length} 個節點，${data.links.length} 條關係`, 'info');
-
-                renderGraph(data);
-
-            } catch (error) {
-                addLog(`[雷達] Neo4j 離線，使用模擬圖譜數據`, 'error');
-                
-                // 模擬數據
-                const mockData = {
-                    nodes: [
-                        { id: '馬匹A', category: 'Horse', name: '馬匹A' },
-                        { id: '馬匹B', category: 'Horse', name: '馬匹B' },
-                        { id: '馬匹C', category: 'Horse', name: '馬匹C' },
-                        { id: '事件1', category: 'Incident', name: '事件1' },
-                        { id: '事件2', category: 'Incident', name: '事件2' },
-                        { id: '事件3', category: 'Incident', name: '事件3' }
-                    ],
-                    links: [
-                        { source: '馬匹A', target: '事件1', type: 'HAS_INCIDENT' },
-                        { source: '馬匹B', target: '事件2', type: 'HAS_INCIDENT' },
-                        { source: '馬匹C', target: '事件3', type: 'HAS_INCIDENT' },
-                        { source: '馬匹A', target: '事件2', type: 'HAS_INCIDENT' }
-                    ]
-                };
-
-                renderGraph(mockData);
-            }
+        function showOverlay(title, msg) {
+            loadingTitle.textContent = title;
+            loadingMsg.textContent = msg;
+            globalLoading.style.display = 'flex';
         }
 
-        // 渲染圖譜
-        function renderGraph(data) {
-            // 初始化 ECharts
-            graphChart = echarts.init(graphContainer);
-
-            // 設定節點顏色
-            const categories = [
-                { name: 'Horse', itemStyle: { color: '#74b9ff' } }, // 藍色
-                { name: 'Incident', itemStyle: { color: '#ffa726' } }, // 橘色
-                { name: 'Unknown', itemStyle: { color: '#999' } }
-            ];
-
-            // 處理節點數據
-            const nodes = data.nodes.map(node => ({
-                id: node.id,
-                name: node.id,
-                category: categories.findIndex(cat => cat.name === node.category) || 2,
-                symbolSize: Math.max(20, Math.min(50, node.id.length * 3)), // 根據名稱長度調整大小
-                ...node
-            }));
-
-            // 處理邊數據
-            const links = data.links.map(link => ({
-                source: link.source,
-                target: link.target,
-                value: link.type
-            }));
-
-            const option = {
-                backgroundColor: 'transparent',
-                series: [{
-                    type: 'graph',
-                    layout: 'force',
-                    data: nodes,
-                    links: links,
-                    categories: categories,
-                    roam: true, // 允許縮放和平移
-                    focusNodeAdjacency: true, // 點擊節點時高亮相鄰節點
-                    draggable: true, // 允許拖拽節點
-                    force: {
-                        repulsion: 100, // 斥力
-                        gravity: 0.1, // 重力
-                        edgeLength: [50, 200], // 邊長範圍
-                        layoutAnimation: true // 動畫效果
-                    },
-                    emphasis: {
-                        focus: 'adjacency',
-                        lineStyle: {
-                            width: 10
-                        }
-                    },
-                    label: {
-                        show: true,
-                        position: 'right',
-                        formatter: '{b}'
-                    },
-                    lineStyle: {
-                        color: 'source',
-                        curveness: 0.3
-                    },
-                    emphasis: {
-                        focus: 'adjacency',
-                        lineStyle: {
-                            width: 10
-                        }
-                    }
-                }]
-            };
-
-            graphChart.setOption(option);
-            graphLoading.style.display = 'none';
-            addLog('[雷達] 圖譜渲染完成', 'system');
+        function hideOverlay() {
+            globalLoading.style.display = 'none';
         }
 
-        // 每日排位按鈕邏輯
-        dailyBtn.addEventListener('click', async () => {
-            const files = fileInput.files;
-            if (files.length === 0) {
-                addLog('[系統] 請先選擇今日排位檔案', 'error');
-                return;
-            }
+        // --- 檔案處理 ---
 
-            dailyBtn.disabled = true;
-            dailyBtn.textContent = '🎯 正在注入...';
-            addLog('[系統] 啟動精準打擊：正在清除舊排位並重鑄圖譜...', 'system');
-
-            try {
-                const formData = new FormData();
-                for (let i = 0; i < files.length; i++) {
-                    formData.append('files', files[i]);
-                }
-                
-                const response = await fetch('/api/upload/daily', {
-                    method: 'POST',
-                    body: formData,
-                });
-                
-                if (!response.ok) {
-                    const errorText = await response.text();
-                    addLog(`[系統] 注入失敗: ${errorText}`, 'error');
-                    throw new Error(errorText);
-                }
-                
-                const result = await response.json();
-                addLog(`[系統] ${result.message}`, 'system');
-                await initGraph();
-            } catch (error) {
-                addLog(`[系統] 異常: ${error.message}`, 'error');
-            } finally {
-                dailyBtn.disabled = false;
-                dailyBtn.textContent = '🎯 今日排位 (精準洗地)';
-            }
+        historyFileInput.addEventListener('change', (e) => {
+            const files = e.target.files;
+            historyFileStatus.textContent = files.length > 0 
+                ? `已選定 ${files.length} 份歷史卷宗 📦` 
+                : '尚未加載卷宗';
+            historyFileStatus.style.color = files.length > 0 ? '#74b9ff' : '#576574';
         });
 
-        // 歷史資料按鈕邏輯
+        dailyFileInput.addEventListener('change', (e) => {
+            const files = e.target.files;
+            dailyFileStatus.textContent = files.length > 0 
+                ? `已選定 ${files.length} 份今日排位 🎯` 
+                : '尚未加載排位';
+            dailyFileStatus.style.color = files.length > 0 ? '#00ff88' : '#576574';
+        });
+
+        // --- API 請求 ---
+
+        // 歷史灌注
         historyBtn.addEventListener('click', async () => {
-            const files = fileInput.files;
+            const files = historyFileInput.files;
             if (files.length === 0) {
-                addLog('[系統] 請先選擇歷史資料檔案', 'error');
+                addLog('請先選擇歷史卷宗檔案', 'warn');
                 return;
             }
 
             historyBtn.disabled = true;
-            historyBtn.textContent = '🏛️ 正在吞噬...';
-            addLog('[系統] 啟動批量吞噬：正在增量更新歷史金庫...', 'system');
+            showOverlay('正在批次寫入歷史金庫', 'UNWIND 批次處理中，此操作不會造成 UI 凍結...');
+            addLog('啟動歷史灌注協議：正在增量更新圖譜記憶...', 'info');
 
             try {
                 const formData = new FormData();
@@ -469,104 +452,182 @@
                     body: formData,
                 });
                 
-                if (!response.ok) {
-                    const errorText = await response.text();
-                    addLog(`[系統] 吞噬失敗: ${errorText}`, 'error');
-                    throw new Error(errorText);
-                }
-                
                 const result = await response.json();
-                addLog(`[系統] ${result.message}`, 'system');
-                await initGraph();
+                if (response.ok) {
+                    addLog(`歷史金庫灌注成功: ${result.message}`, 'system');
+                    await initGraph(); // 刷新雷達
+                    alert('✅ 歷史金庫灌注完成！');
+                } else {
+                    addLog(`歷史灌注失敗: ${result.detail || '未知錯誤'}`, 'error');
+                }
             } catch (error) {
-                addLog(`[系統] 異常: ${error.message}`, 'error');
+                addLog(`網路或伺服器異常: ${error.message}`, 'error');
             } finally {
                 historyBtn.disabled = false;
-                historyBtn.textContent = '🏛️ 注入歷史 (增量)';
+                hideOverlay();
             }
         });
 
-
-        startBtn.addEventListener('click', async () => {
-            const prompt = promptInput.value.trim();
-            if (!prompt) {
-                addLog('[系統] 請輸入推演指令', 'error');
+        // 今日同步
+        dailyBtn.addEventListener('click', async () => {
+            const files = dailyFileInput.files;
+            if (files.length === 0) {
+                addLog('請先選擇今日排位檔案', 'warn');
                 return;
             }
 
-            // 禁用按鈕
-            startBtn.disabled = true;
-            startBtn.textContent = '⏳ 推演中...';
-            addLog('[系統] 正在呼叫蜂群大腦進行戰術推演...', 'system');
+            dailyBtn.disabled = true;
+            showOverlay('正在同步今日排位', '執行精準洗地，清除舊有 DailySeed 標籤...');
+            addLog('啟動今日同步協議：重構臨時情報神經網...', 'info');
 
             try {
-                // 直接執行推演，不再處理檔案
+                const formData = new FormData();
+                for (let i = 0; i < files.length; i++) {
+                    formData.append('files', files[i]);
+                }
+                
+                const response = await fetch('/api/upload/daily', {
+                    method: 'POST',
+                    body: formData,
+                });
+                
+                const result = await response.json();
+                if (response.ok) {
+                    addLog(`今日排位同步成功: ${result.message}`, 'system');
+                    await initGraph(); // 刷新雷達
+                } else {
+                    addLog(`同步失敗: ${result.detail || '未知錯誤'}`, 'error');
+                }
+            } catch (error) {
+                addLog(`網路或伺服器異常: ${error.message}`, 'error');
+            } finally {
+                dailyBtn.disabled = false;
+                hideOverlay();
+            }
+        });
 
+        // 推演啟動
+        startBtn.addEventListener('click', async () => {
+            const prompt = promptInput.value.trim();
+            if (!prompt) {
+                addLog('請輸入推演指令', 'warn');
+                return;
+            }
 
+            startBtn.disabled = true;
+            startBtn.textContent = '⏳ 推演中...';
+            addLog(`啟動蜂群推演指令: "${prompt}"`, 'system');
+
+            try {
                 const response = await fetch('/api/simulate', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ prompt: prompt }),
                 });
 
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                }
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
                 const result = await response.json();
 
-                // 添加狀態日誌
-                result.status_logs.forEach(log => {
-                    addLog(log, 'info');
-                });
+                // 處理過程日誌
+                if (result.status_logs) {
+                    result.status_logs.forEach(log => addLog(log, 'info'));
+                }
 
-                // 顯示戰術報告
+                // 顯示報告
                 if (result.tactical_report) {
-                    addLog('=== 戰術報告 ===', 'system');
-                    // 將 Markdown 簡單顯示為文本（前端不解析 Markdown）
-                    const reportLines = result.tactical_report.split('\n');
-                    reportLines.forEach(line => {
-                        if (line.trim()) {
-                            addLog(line, 'info');
-                        }
+                    addLog('--- 戰術推演報告 ---', 'system');
+                    const lines = result.tactical_report.split('\n');
+                    lines.forEach(line => {
+                        if (line.trim()) addLog(line, 'info');
                     });
                 }
 
-                if (result.status === 'completed') {
-                    addLog('[系統] 推演完成', 'system');
-                } else if (result.status === 'aborted') {
-                    addLog('[系統] 推演中止', 'error');
-                } else {
-                    addLog('[系統] 推演錯誤', 'error');
-                }
-
+                addLog(`推演完成 [狀態: ${result.status}]`, 'system');
             } catch (error) {
-                addLog(`[系統] 請求失敗: ${error.message}`, 'error');
+                addLog(`推演請求失敗: ${error.message}`, 'error');
             } finally {
-                // 恢復按鈕
                 startBtn.disabled = false;
-                startBtn.textContent = '🚀 啟動蜂群推演';
+                startBtn.textContent = '🚀 啟動推演';
             }
         });
 
-        // 允許按 Enter 鍵觸發
-        promptInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                startBtn.click();
-            }
-        });
+        // --- 圖譜視覺化 ---
 
-        // 頁面載入時初始化圖譜
+        async function initGraph() {
+            try {
+                graphLoading.style.display = 'block';
+                const response = await fetch('/api/graph_data');
+                if (!response.ok) throw new Error('無法獲取圖譜數據');
+                const data = await response.json();
+                renderGraph(data);
+            } catch (error) {
+                addLog(`圖譜雷達離線: ${error.message}`, 'warn');
+            } finally {
+                graphLoading.style.display = 'none';
+            }
+        }
+
+        function renderGraph(data) {
+            if (!graphChart) {
+                graphChart = echarts.init(graphContainer);
+            }
+
+            const categories = [
+                { name: 'Horse', itemStyle: { color: '#74b9ff' } },
+                { name: 'Jockey', itemStyle: { color: '#a29bfe' } },
+                { name: 'Trainer', itemStyle: { color: '#fab1a0' } },
+                { name: 'Race', itemStyle: { color: '#ffeaa7' } },
+                { name: 'Incident', itemStyle: { color: '#ff7675' } },
+                { name: 'DailySeed', itemStyle: { color: '#00ff88' } },
+                { name: 'Unknown', itemStyle: { color: '#636e72' } }
+            ];
+
+            const nodes = data.nodes.map(n => ({
+                id: n.id,
+                name: n.id,
+                category: categories.findIndex(c => c.name === n.category) === -1 ? 6 : categories.findIndex(c => c.name === n.category),
+                symbolSize: n.category === 'DailySeed' ? 35 : 25,
+                value: n.category,
+                draggable: true
+            }));
+
+            const links = data.links.map(l => ({
+                source: l.source,
+                target: l.target,
+                label: { show: false, formatter: l.type },
+                lineStyle: { curveness: 0.2, opacity: 0.6 }
+            }));
+
+            const option = {
+                tooltip: { trigger: 'item' },
+                legend: [{ data: categories.map(c => c.name), textStyle: { color: '#8395a7' } }],
+                series: [{
+                    type: 'graph',
+                    layout: 'force',
+                    data: nodes,
+                    links: links,
+                    categories: categories,
+                    roam: true,
+                    label: { show: true, position: 'right', color: '#c8d6e5', fontSize: 10 },
+                    force: {
+                        repulsion: 150,
+                        edgeLength: 100,
+                        gravity: 0.1
+                    },
+                    emphasis: { focus: 'adjacency', lineStyle: { width: 4 } }
+                }]
+            };
+
+            graphChart.setOption(option);
+        }
+
+        // --- 事件監聽 ---
+
         window.addEventListener('load', initGraph);
+        window.addEventListener('resize', () => graphChart && graphChart.resize());
+        promptInput.addEventListener('keypress', (e) => e.key === 'Enter' && startBtn.click());
 
-        // 視窗調整大小時重新調整圖表大小
-        window.addEventListener('resize', () => {
-            if (graphChart) {
-                graphChart.resize();
-            }
-        });
     </script>
 </body>
 </html>
