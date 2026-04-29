@@ -17,8 +17,10 @@ from .utils.logger import setup_logger, get_logger
 
 
 def create_app(config_class=Config):
-    """Flask应用工厂函数"""
-    app = Flask(__name__)
+    """Flask 應用工廠函數"""
+    # 修正：顯式指定模板與靜態資源路徑 (相對於 backend/app 目錄)
+    template_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'templates')
+    app = Flask(__name__, template_folder=template_dir)
     app.config.from_object(config_class)
     
     # 设置JSON编码：确保中文直接显示（而不是 \uXXXX 格式）
@@ -68,6 +70,18 @@ def create_app(config_class=Config):
     app.register_blueprint(simulation_bp, url_prefix='/api/simulation')
     app.register_blueprint(report_bp, url_prefix='/api/report')
     
+    # 首页路由
+    @app.route('/')
+    def index():
+        from flask import render_template
+        return render_template('v1100_console.html')
+
+    # V1100 控制台
+    @app.route('/v1100_console')
+    def console():
+        from flask import render_template
+        return render_template('v1100_console.html')
+
     # 健康检查
     @app.route('/health')
     def health():
