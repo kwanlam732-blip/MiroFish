@@ -293,6 +293,93 @@
             text-align: center;
             color: #576574;
         }
+
+        /* --- Holo-Render Tactical Report Styles --- */
+        #report-container {
+            display: none;
+            padding: 1.5rem;
+            margin: 1rem;
+            background: rgba(0, 255, 136, 0.05);
+            border: 1px solid rgba(0, 255, 136, 0.2);
+            border-radius: 8px;
+            animation: slideIn 0.5s ease-out;
+        }
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .report-header {
+            border-bottom: 2px solid #00ff88;
+            padding-bottom: 0.5rem;
+            margin-bottom: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .report-header h2 {
+            color: #00ff88;
+            font-size: 1.2rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+        .swarm-analysis-box {
+            background: rgba(255, 255, 255, 0.03);
+            padding: 1rem;
+            border-radius: 4px;
+            margin-bottom: 1.5rem;
+            border-left: 3px solid #74b9ff;
+            font-size: 0.95rem;
+            line-height: 1.6;
+        }
+        .tactical-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1rem;
+        }
+        .tactical-card {
+            background: rgba(10, 14, 23, 0.8);
+            border: 1px solid rgba(0, 255, 136, 0.2);
+            padding: 1rem;
+            border-radius: 6px;
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s;
+        }
+        .tactical-card:hover {
+            border-color: #00ff88;
+            box-shadow: 0 0 15px rgba(0, 255, 136, 0.2);
+            transform: scale(1.02);
+        }
+        .card-rank {
+            position: absolute;
+            top: 0; right: 0;
+            background: #00ff88;
+            color: #0a0e17;
+            padding: 2px 8px;
+            font-weight: bold;
+            font-size: 0.8rem;
+        }
+        .card-horse {
+            font-size: 1.1rem;
+            font-weight: bold;
+            color: #fff;
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .card-conf {
+            font-size: 0.85rem;
+            color: #00ff88;
+            background: rgba(0, 255, 136, 0.1);
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+        .card-reason {
+            font-size: 0.85rem;
+            color: #8395a7;
+            line-height: 1.4;
+        }
     </style>
 </head>
 <body>
@@ -355,6 +442,9 @@
                 </div>
             </div>
 
+            <!-- 全息戰報渲染區 -->
+            <div id="report-container"></div>
+
             <div class="terminal" id="terminal-logs">
                 <div class="log-entry log-system">[系統] V1100 全息指揮台已就緒，等待首長指令...</div>
             </div>
@@ -379,6 +469,7 @@
         const dailyFileStatus = document.getElementById('daily-file-status');
 
         const terminalLogs = document.getElementById('terminal-logs');
+        const reportContainer = document.getElementById('report-container');
         const graphContainer = document.getElementById('graph-container');
         const graphLoading = document.getElementById('graph-loading');
         
@@ -538,11 +629,8 @@
 
                 // 顯示報告
                 if (result.tactical_report) {
-                    addLog('--- 戰術推演報告 ---', 'system');
-                    const lines = result.tactical_report.split('\n');
-                    lines.forEach(line => {
-                        if (line.trim()) addLog(line, 'info');
-                    });
+                    addLog('--- 戰術推演報告已生成 ---', 'system');
+                    renderTacticalReport(result.tactical_report);
                 }
 
                 addLog(`推演完成 [狀態: ${result.status}]`, 'system');
@@ -554,6 +642,87 @@
                 startBtn.textContent = '🚀 啟動推演';
             }
         });
+
+        // --- 戰術報告渲染 ---
+        function renderTacticalReport(mdText) {
+            reportContainer.innerHTML = '';
+            reportContainer.style.display = 'block';
+
+            // 解析 Markdown 結構
+            // 預期格式: 
+            // ## 🧠 蜂群推演思維
+            // [分析內容]
+            // ## 🎯 狙擊名單
+            // ### N. 馬名 (信心指數: X%)
+            // - 理由
+
+            let analysis = "";
+            let picks = [];
+            
+            const lines = mdText.split('\n');
+            let currentMode = ""; // analysis | picks
+            let currentPick = null;
+
+            lines.forEach(line => {
+                if (line.includes('## 🧠 蜂群推演思維')) {
+                    currentMode = "analysis";
+                } else if (line.includes('## 🎯 狙擊名單')) {
+                    currentMode = "picks";
+                } else if (currentMode === "analysis") {
+                    if (line.trim() && !line.startsWith('#')) {
+                        analysis += line + "<br>";
+                    }
+                } else if (currentMode === "picks") {
+                    const pickMatch = line.match(/### (\d+)\.\s*(.*?)\s*\(信心指數:\s*(.*?)\)/);
+                    if (pickMatch) {
+                        if (currentPick) picks.push(currentPick);
+                        currentPick = {
+                            rank: pickMatch[1],
+                            name: pickMatch[2],
+                            conf: pickMatch[3],
+                            reason: ""
+                        };
+                    } else if (line.startsWith('- ') && currentPick) {
+                        currentPick.reason = line.replace('- ', '');
+                    }
+                }
+            });
+            if (currentPick) picks.push(currentPick);
+
+            // 構建 HTML
+            let html = `
+                <div class="report-header">
+                    <h2>📡 全息戰術報告 (Holo-Render)</h2>
+                    <span style="font-size: 0.8rem; color: #8395a7;">SECURE LINE // V1100 ACTIVE</span>
+                </div>
+                <div class="swarm-analysis-box">
+                    <strong style="color: #74b9ff;">🧠 蜂群思維推演：</strong><br>
+                    ${analysis || "情報不足，僅基於基礎量化進行推演。"}
+                </div>
+                <div class="tactical-grid">
+            `;
+
+            picks.forEach(p => {
+                html += `
+                    <div class="tactical-card">
+                        <div class="card-rank">TOP ${p.rank}</div>
+                        <div class="card-horse">
+                            ${p.name}
+                            <span class="card-conf">${p.conf}</span>
+                        </div>
+                        <div class="card-reason">
+                            ${p.reason}
+                        </div>
+                    </div>
+                `;
+            });
+
+            html += `</div>`;
+            reportContainer.innerHTML = html;
+            
+            // 自動滾動到報告區
+            reportContainer.scrollIntoView({ behavior: 'smooth' });
+        }
 
         // --- 圖譜視覺化 ---
 
