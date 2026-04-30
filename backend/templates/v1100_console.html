@@ -457,6 +457,9 @@
                     addLog(`歷史金庫灌注成功: ${result.message}`, 'system');
                     await initGraph(); // 刷新雷達
                     alert('✅ 歷史金庫灌注完成！');
+                } else {
+                    addLog(`歷史灌注失敗: ${result.detail || '未知錯誤'}`, 'error');
+                }
             } catch (error) {
                 addLog(`⚠️ 引擎連線中斷，請確認終端機 Uvicorn 是否仍在運行 (Error: ${error.message})`, 'error');
                 alert('⚠️ 引擎連線中斷！請檢查後端終端機狀態。');
