@@ -199,7 +199,11 @@ async def api_simulate(request: Request):
         
         # 直接呼叫現有的推演服務
         result = await run_swarm_prediction(prompt=prompt)
-        return JSONResponse(content={"status": "success", "report": result.get("tactical_report", "推演完成")})
+        return JSONResponse(content={
+            "status": result.get("status", "success"),
+            "tactical_report": result.get("tactical_report", "推演完成"),
+            "status_logs": result.get("status_logs", [])
+        })
     except Exception as e:
         logger.error(f"[V1100] 推演失敗: {e}")
         return JSONResponse(content={"error": str(e)}, status_code=500)
