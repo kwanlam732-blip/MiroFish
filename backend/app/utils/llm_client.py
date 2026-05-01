@@ -5,6 +5,7 @@ LLM客户端封装
 
 import json
 import re
+import httpx
 from typing import Optional, Dict, Any, List
 from openai import OpenAI
 
@@ -64,6 +65,7 @@ class LLMClient:
         if response_format:
             call_kwargs["response_format"] = response_format
         
+        call_kwargs.setdefault("timeout", 600)
         response = self.client.chat.completions.create(**call_kwargs)
         content = response.choices[0].message.content
         # 部分模型（如MiniMax M2.5）会在content中包含<think>思考内容，需要移除
@@ -87,22 +89,39 @@ class LLMClient:
         Returns:
             解析后的JSON对象
         """
-        response = self.chat(
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            response_format={"type": "json_object"}
-        )
-        # 清理markdown代码块标记
-        cleaned_response = response.strip()
-        cleaned_response = re.sub(r'^```(?:json)?\s*\n?', '', cleaned_response, flags=re.IGNORECASE)
-        cleaned_response = re.sub(r'\n?```\s*$', '', cleaned_response)
-        cleaned_response = cleaned_response.strip()
-
         try:
+            response = self.chat(
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                response_format={"type": "json_object"}
+            )
+
+            cleaned_response = response.strip()
+            cleaned_response = re.sub(r'^```(?:json)?\s*\n?', '', cleaned_response, flags=re.IGNORECASE)
+            cleaned_response = re.sub(r'\n?```\s*$', '', cleaned_response)
+            cleaned_response = cleaned_response.strip()
+
             return json.loads(cleaned_response)
-        except json.JSONDecodeError:
-            raise ValueError(f"LLM返回的JSON格式无效: {cleaned_response}")
+        except (httpx.HTTPStatusError, Exception) as e:
+            fallback_response = self.chat(
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens
+            )
+            cleaned_fallback = fallback_response.strip()
+            cleaned_fallback = re.sub(r'^```(?:json)?\s*\n?', '', cleaned_fallback, flags=re.IGNORECASE)
+            cleaned_fallback = re.sub(r'\n?```\s*$', '', cleaned_fallback)
+            cleaned_fallback = cleaned_fallback.strip()
+
+            json_match = re.search(r'\{[\s\S]*\}', cleaned_fallback)
+            if not json_match:
+                raise ValueError(f"無法從純文字回應中提取 JSON: {cleaned_fallback}")
+
+            try:
+                return json.loads(json_match.group(0))
+            except json.JSONDecodeError as json_e:
+                raise ValueError(f"純文字回應提取的 JSON 格式無效: {json_match.group(0)}") from json_e
 
     def close(self):
         """釋放 httpx 連線資源"""

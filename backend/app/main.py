@@ -202,6 +202,7 @@ async def api_simulate(request: Request):
         return JSONResponse(content={
             "status": result.get("status", "success"),
             "tactical_report": result.get("tactical_report", "推演完成"),
+            "report": result.get("tactical_report", "推演完成"),
             "status_logs": result.get("status_logs", [])
         })
     except Exception as e:
