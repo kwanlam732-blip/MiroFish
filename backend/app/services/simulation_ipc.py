@@ -118,7 +118,7 @@ class SimulationIPCClient:
         self,
         command_type: CommandType,
         args: Dict[str, Any],
-        timeout: float = 60.0,
+        timeout: float = 300.0,
         poll_interval: float = 0.5
     ) -> IPCResponse:
         """
@@ -191,7 +191,7 @@ class SimulationIPCClient:
         agent_id: int,
         prompt: str,
         platform: str = None,
-        timeout: float = 60.0
+        timeout: float = 300.0
     ) -> IPCResponse:
         """
         发送单个Agent采访命令
@@ -225,7 +225,7 @@ class SimulationIPCClient:
         self,
         interviews: List[Dict[str, Any]],
         platform: str = None,
-        timeout: float = 120.0
+        timeout: float = 600.0
     ) -> IPCResponse:
         """
         发送批量采访命令
@@ -251,7 +251,7 @@ class SimulationIPCClient:
             timeout=timeout
         )
     
-    def send_close_env(self, timeout: float = 30.0) -> IPCResponse:
+    def send_close_env(self, timeout: float = 60.0) -> IPCResponse:
         """
         发送关闭环境命令
         

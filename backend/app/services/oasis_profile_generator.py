@@ -373,8 +373,8 @@ class OasisProfileGenerator:
                 node_future = executor.submit(search_nodes)
                 
                 # 获取结果
-                edge_result = edge_future.result(timeout=30)
-                node_result = node_future.result(timeout=30)
+                edge_result = edge_future.result(timeout=600)
+                node_result = node_future.result(timeout=600)
             
             # 处理边搜索结果
             all_facts = set()
